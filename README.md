@@ -135,6 +135,48 @@ multi-agent-research/
 
 ---
 
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- An LLM API key (OpenRouter / Google AI / OpenAI)
+
+### Setup
+
+```bash
+# Clone
+git clone https://github.com/rrusyaidii/multi-agent-research.git
+cd multi-agent-research
+
+# Virtual environment
+python -m venv venv
+source venv/bin/activate   # Linux/Mac
+.\venv\Scripts\activate    # Windows
+
+# Install
+pip install -e .
+
+# Environment
+cp .env.example .env
+# Edit .env with your API key
+```
+
+### Usage (CLI)
+
+```bash
+# Single research
+python -m research_agent "AI agents market trends 2026"
+
+# With thread ID for session continuation
+python -m research_agent "Rust vs Go for backend services" --thread-id "rust-go-01"
+
+# Output as JSON
+python -m research_agent "Best frameworks for agentic AI" --format json
+```
+
+---
+
 <p align="center">
   Built with 🦞 <a href="https://openclaw.ai">OpenClaw</a> — Haziq Rusyaidi • Jun 2026
 </p>
