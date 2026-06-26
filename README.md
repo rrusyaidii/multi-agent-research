@@ -5,9 +5,10 @@ A **LangGraph-powered multi-agent system** that researches any topic, analyzes f
 Built with a **supervisor agent** that orchestrates specialist workers (search, analysis, writing), all connected through a `StateGraph` with checkpointed memory. Written in Python with LangGraph 1.x.
 
 ```
-Supervisor ──→ Search Agent ──→ Analysis Agent ──→ Report Writer ──→ Done
-    │              │                 │                  │
-    └──────────────┴─────────────────┴──────────────────┴── all return to supervisor
+Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
+                 ↑            │            │
+                 └────────────┴────────────┘
+                     all return to supervisor
 ```
 
 ---
@@ -17,29 +18,29 @@ Supervisor ──→ Search Agent ──→ Analysis Agent ──→ Report Writ
 ### High-Level Design
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        USER (CLI / API / UI)                     │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ "research AI agents market 2026"
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     SUPERVISOR AGENT                              │
-│  • Receives topic → decides next agent                           │
-│  • Routes via conditional edges                                  │
-│  • Tracks progress in shared state                               │
-│  • Calls FINISH when report complete                             │
-└──┬──────────────┬──────────────┬──────────────────┬──────────────┘
-   │              │              │                  │
-   ▼              ▼              ▼                  ▼
-┌─────────┐ ┌──────────┐ ┌─────────────┐ ┌──────────────────┐
-│ SEARCH  │ │ ANALYSIS │ │   REPORT    │ │     MEMORY       │
-│ AGENT   │ │  AGENT   │ │   WRITER    │ │  (Checkpointer)   │
-│         │ │          │ │             │ │                  │
-│ web_    │ │ summar-  │ │ markdown    │ │ SQLite /          │
-│ search() │ │ ise(),   │ │ compilation │ │ Postgres backend  │
-│ web_    │ │ extract()│ │ + export    │ │ for thread        │
-│ fetch() │ │          │ │             │ │ persistence       │
-└─────────┘ └──────────┘ └─────────────┘ └──────────────────┘
+                    ┌─────────────────────────────┐
+                    │     User (CLI / API / UI)    │
+                    └─────────────┬───────────────┘
+                                  │ "research topic"
+                                  ▼
+          ┌─────────────────────────────────────────────────┐
+          │                 SUPERVISOR AGENT                  │
+          │  • Receives topic → decides next agent           │
+          │  • Routes via conditional edges                  │
+          │  • Tracks progress in shared state               │
+          │  • Calls FINISH when report is complete          │
+          └──┬──────────┬──────────┬───────────┬───────────┘
+             │          │          │           │
+             ▼          ▼          ▼           ▼
+     ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────────────┐
+     │  SEARCH  │ │ ANALYSIS │ │ WRITER │ │  CHECKPOINT  │
+     │  AGENT   │ │  AGENT   │ │ AGENT  │ │  (Memory)    │
+     │          │ │          │ │        │ │              │
+     │ web_     │ │ summar-  │ │ mark-  │ │ SQLite /     │
+     │ search() │ │ ise()    │ │ down   │ │ Postgres     │
+     │ web_     │ │ extract()│ │ report │ │ persistence  │
+     │ fetch()  │ │          │ │        │ │              │
+     └──────────┘ └──────────┘ └────────┘ └──────────────┘
 ```
 
 ### Components
@@ -58,17 +59,17 @@ Supervisor ──→ Search Agent ──→ Analysis Agent ──→ Report Writ
 ### Data Flow
 
 ```
-1. User sends topic → Supervisor agent
-2. Supervisor analyses → routes to Search Agent
-3. Search Agent loops: search web → fetch content → reflect → done
-4. Returns to Supervisor with search result
-5. Supervisor routes to Analysis Agent
-6. Analysis Agent: summarises, extracts, structures → returns to Supervisor
-7. Supervisor routes to Report Writer (or back to Search if insufficient)
-8. Report Writer compiles markdown → returns final report
-9. Supervisor signals FINISH → END
+ 1. User sends topic → Supervisor agent
+ 2. Supervisor analyses → routes to Search Agent
+ 3. Search Agent loops: search web → fetch content → reflect → done
+ 4. Returns to Supervisor with search result
+ 5. Supervisor routes to Analysis Agent
+ 6. Analysis Agent: summarises, extracts, structures → returns to Supervisor
+ 7. Supervisor routes to Report Writer (or back to Search if insufficient)
+ 8. Report Writer compiles markdown → returns final report
+ 9. Supervisor signals FINISH → END
 
-State is persisted via Checkpointer at every step.
+ State is persisted via Checkpointer at every step.
 ```
 
 ### Directory Structure
@@ -122,7 +123,7 @@ multi-agent-research/
 | **Language** | Python 3.11+ | LangGraph ecosystem, fast prototyping |
 | **Agent Framework** | LangGraph 1.x | StateGraph, ToolNode, create_agent, Command, checkpointer |
 | **LLM Provider** | OpenRouter / Gemini / OpenAI | Abstracted via `ChatOpenAI`-compatible interface |
-| **Model** | `google/gemini-2.5-flash` (default) | Cheap ($0.015/million in), fast, good reasoning |
+| **Model** | `google/gemini-2.5-flash` (default) | Cheap (RM0.07/million in), fast, good reasoning |
 | **Web Search** | Custom `httpx` tool (Tavily / SerpAPI / Brave optional) | No API key required for basic search |
 | **Report Format** | Markdown (via jinja2) | Portable, readable, easy to export |
 | **Checkpointer** | LangGraph MemorySaver (SQLite) | Zero config, file-based persistence |
@@ -132,16 +133,16 @@ multi-agent-research/
 | **Testing** | pytest + pytest-asyncio | Industry standard for Python |
 | **Linting** | ruff + mypy | Fast, strict, PEP 8 compliant |
 
-### Why Gem  ini Flash for Agent Loops?
+### Why Gemini Flash for Agent Loops?
 
 Agent loops call the LLM **10-30 times per task**. Using a cheap model is not optional — it's economic necessity.
 
 | Model | Cost per 1M input tokens | 1 research task (~15 calls) |
 |-------|--------------------------|----------------------------|
-| GPT-4o | $2.50 | ~$0.04 |
-| Claude Sonnet 4 | $3.00 | ~$0.05 |
-| **Gemini 2.5 Flash** | **$0.015** | **~$0.0002** |
-| DeepSeek V3 | $0.27 | ~$0.004 |
+| GPT-4o | ~RM11.00 | ~RM0.18 |
+| Claude Sonnet 4 | ~RM13.00 | ~RM0.22 |
+| **Gemini 2.5 Flash** | **~RM0.07** | **~RM0.001** |
+| DeepSeek V3 | ~RM1.20 | ~RM0.02 |
 
 Default to Gemini Flash. Fallback to stronger model only for final report writing if needed.
 
@@ -205,7 +206,7 @@ cp .env.example .env
 # Single research
 python -m research_agent "AI agents market trends 2026"
 
-# With thread ID for continuation
+# With thread ID for session continuation
 python -m research_agent "Rust vs Go for backend services" --thread-id "rust-go-01"
 
 # Output as JSON
@@ -254,14 +255,14 @@ docker compose up --build
 # - API at http://localhost:8000 (if FastAPI enabled)
 ```
 
-### Railway.app ($5/month) — Recommended for First Deploy
+### Railway.app (~RM20/month) — Recommended for First Deploy
 
 1. Push repo to GitHub
 2. Connect Railway project → select repo
 3. Add env vars (API keys)
 4. Deploy — auto SSL, auto domain
 
-### VPS ($6/month DigitalOcean + Docker + Cloudflare)
+### VPS (~RM25/month DigitalOcean + Docker + Cloudflare)
 
 ```bash
 # On VPS:
@@ -277,12 +278,12 @@ docker compose up -d
 
 ### v1 (Current Scope)
 - [x] Core graph structure (StateGraph)
-- [x] Supervisor agent with conditional routing
-- [x] Search agent + web tools
-- [x] Analysis agent
-- [x] Report writer
-- [x] SQLite checkpointer
-- [x] CLI interface
+- [ ] Supervisor agent with conditional routing
+- [ ] Search agent + web tools
+- [ ] Analysis agent
+- [ ] Report writer
+- [ ] SQLite checkpointer
+- [ ] CLI interface
 - [ ] Tests for each component
 - [ ] `.env.example` with all configs
 
@@ -304,34 +305,34 @@ docker compose up -d
 
 ### ADR-001: Supervisor over flat routing
 
-| | Decision |
+| | |
 |---|---|
-| **Context** | Multiple agents need coordination. Without a supervisor, routing logic is duplicated and hardcoded. |
+| **Context** | Multiple agents need coordination. Without a supervisor, routing logic is duplicated and hardcoded in each agent. |
 | **Decision** | Single supervisor agent that receives all state and decides the next agent via conditional edges. |
 | **Consequence** | + Centralised routing, easy to add new agents. - Supervisor is a single node — if it fails, graph halts. |
 | **Mitigation** | Retry + fallback logic on supervisor LLM call. |
 
 ### ADR-002: SQLite checkpointer over in-memory
 
-| | Decision |
+| | |
 |---|---|
 | **Context** | Users may want to resume research sessions. In-memory state is lost on restart. |
 | **Decision** | Use LangGraph's `MemorySaver` with SQLite backend. |
-| **Consequence** | + Persistent across restarts. + No external DB needed. - Not suitable for multi-process without PG. |
+| **Consequence** | + Persistent across restarts. + No external DB needed. - Not suitable for multi-process without PostgreSQL. |
 | **Mitigation** | v2 adds PostgreSQL support via `AsyncPostgresSaver`. |
 
-### ADR-003: Gemin i Flash as default model
+### ADR-003: Gemini Flash as default model
 
-| | Decision |
+| | |
 |---|---|
 | **Context** | Agent loops call the LLM 10-30x per task. Cost accumulates fast. |
-| **Decision** | Default to Gemini 2.5 Flash ($0.015/M tokens). Allow override via `LLM_MODEL` env var. |
+| **Decision** | Default to Gemini 2.5 Flash (~RM0.07/M tokens). Allow override via `LLM_MODEL` env var. |
 | **Consequence** | + ~200x cheaper than GPT-4o per task. - Flash may miss nuanced reasoning. |
 | **Mitigation** | Users can set a stronger model for final report generation only. |
 
 ### ADR-004: Tool-based web search over hardcoded API
 
-| | Decision |
+| | |
 |---|---|
 | **Context** | Multiple search providers exist (Tavily, SerpAPI, Brave, custom). Hardcoding one creates lock-in. |
 | **Decision** | Abstract search behind a `web_search()` tool. Default implementation uses `httpx` + public search APIs. Provider can be swapped via config. |
