@@ -2,7 +2,7 @@
 
 A **LangGraph-powered multi-agent system** that researches any topic, analyzes findings, and compiles structured reports — autonomously.
 
-Built with a **supervisor agent** that orchestrates specialist workers (search, analysis, writing), all connected through a `StateGraph` with checkpointed memory. Written in Python with LangGraph 1.x.
+Built with a **supervisor agent** that orchestrates specialist workers (search, analysis, writing), connected through a `StateGraph` with checkpointed memory. Includes a **FastAPI backend** and **Next.js web UI**.
 
 ```
 Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
@@ -13,170 +13,159 @@ Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
 
 ---
 
-## Architecture
-
-### High-Level Design
-
-```
-                    ┌─────────────────────────────┐
-                    │     User (CLI / API / UI)    │
-                    └─────────────┬───────────────┘
-                                  │ "research topic"
-                                  ▼
-          ┌─────────────────────────────────────────────────┐
-          │                 SUPERVISOR AGENT                  │
-          │  • Receives topic → decides next agent           │
-          │  • Routes via conditional edges                  │
-          │  • Tracks progress in shared state               │
-          │  • Calls FINISH when report is complete          │
-          └──┬──────────┬──────────┬───────────┬───────────┘
-             │          │          │           │
-             ▼          ▼          ▼           ▼
-     ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────────────┐
-     │  SEARCH  │ │ ANALYSIS │ │ WRITER │ │  CHECKPOINT  │
-     │  AGENT   │ │  AGENT   │ │ AGENT  │ │  (Memory)    │
-     │          │ │          │ │        │ │              │
-     │ web_     │ │ summar-  │ │ mark-  │ │ SQLite /     │
-     │ search() │ │ ise()    │ │ down   │ │ Postgres     │
-     │ web_     │ │ extract()│ │ report │ │ persistence  │
-     │ fetch()  │ │          │ │        │ │              │
-     └──────────┘ └──────────┘ └────────┘ └──────────────┘
-```
-
-### Components
-
-| Component | Responsibility | Tech |
-|-----------|---------------|------|
-| **Supervisor Agent** | Receives topic, delegates to workers, decides routing | LangGraph StateGraph + conditional edges |
-| **Search Agent** | Web search + content retrieval via tools | Python `httpx`, web_search tool |
-| **Analysis Agent** | Summarises, extracts key points, identifies patterns | LangGraph create_agent |
-| **Report Writer** | Compiles findings into structured markdown report | LangGraph create_agent + `jinja2` template |
-| **Checkpointer** | Persists conversation threads for continuation | LangGraph MemorySaver (SQLite) |
-| **CLI** | Entry point — takes query from terminal | Python `argparse` / `typer` |
-| **FastAPI (optional)** | Expose as REST API for web frontend | FastAPI + uvicorn |
-| **Next.js UI (optional)** | Web interface for non-technical users | Next.js + Tailwind |
-
-### Data Flow
-
-```
- 1. User sends topic → Supervisor agent
- 2. Supervisor analyses → routes to Search Agent
- 3. Search Agent loops: search web → fetch content → reflect → done
- 4. Returns to Supervisor with search result
- 5. Supervisor routes to Analysis Agent
- 6. Analysis Agent: summarises, extracts, structures → returns to Supervisor
- 7. Supervisor routes to Report Writer (or back to Search if insufficient)
- 8. Report Writer compiles markdown → returns final report
- 9. Supervisor signals FINISH → END
-
- State is persisted via Checkpointer at every step.
-```
-
-### Directory Structure
-
-```
-multi-agent-research/
-├── src/
-│   └── research_agent/
-│       ├── __init__.py
-│       ├── graph.py              # StateGraph definition + compilation
-│       ├── supervisor.py         # Supervisor agent logic
-│       ├── agents/
-│       │   ├── __init__.py
-│       │   ├── search.py         # Search agent
-│       │   ├── analysis.py       # Analysis agent
-│       │   └── writer.py         # Report writer agent
-│       ├── tools/
-│       │   ├── __init__.py
-│       │   ├── web_search.py     # Web search tool
-│       │   └── web_fetch.py      # Content fetch tool
-│       ├── state.py              # TypedDict / Pydantic state model
-│       ├── config.py             # Settings, env vars, model config
-│       └── cli.py                # CLI entry point
-├── tests/
-│   ├── __init__.py
-│   ├── test_graph.py
-│   ├── test_agents.py
-│   └── test_tools.py
-├── reports/                      # Generated reports output (gitignored)
-├── docs/
-│   └── architecture.md           # Extended architecture docs
-├── scripts/
-│   └── seed_prompt.sh            # Example usage scripts
-├── pyproject.toml                # Dependencies + tool config
-├── Dockerfile                    # Container image
-├── docker-compose.yml            # Local dev + VPS deployment
-├── .env.example                  # Environment variables template
-├── .editorconfig
-├── .gitignore
-├── .dockerignore
-├── README.md
-└── ARCHITECTURE.md
-```
-
----
-
 ## Tech Stack
 
-| Category | Choice | Why |
-|----------|--------|-----|
-| **Language** | Python 3.11+ | LangGraph ecosystem, fast prototyping |
-| **Agent Framework** | LangGraph 1.x | StateGraph, ToolNode, create_agent, Command, checkpointer |
-| **LLM Provider** | OpenRouter / Gemini / OpenAI | Abstracted via `ChatOpenAI`-compatible interface |
-| **Model** | `google/gemini-2.5-flash` (default) | Cheap (RM0.07/million in), fast, good reasoning |
-| **Web Search** | Custom `httpx` tool (Tavily / SerpAPI / Brave optional) | No API key required for basic search |
-| **Report Format** | Markdown (via jinja2) | Portable, readable, easy to export |
-| **Checkpointer** | LangGraph MemorySaver (SQLite) | Zero config, file-based persistence |
-| **Persistence** | SQLite (local) / PostgreSQL (prod) | Scales from laptop to VPS |
-| **API Layer** | FastAPI + uvicorn (optional) | Production-ready async server |
-| **Container** | Docker + docker-compose | Consistent dev & deploy |
-| **Testing** | pytest + pytest-asyncio | Industry standard for Python |
-| **Linting** | ruff + mypy | Fast, strict, PEP 8 compliant |
+| Layer | Tech |
+|-------|------|
+| Agents | LangGraph 1.x, LangChain |
+| LLM | OpenRouter (default: `google/gemini-2.5-flash`) |
+| API | FastAPI + uvicorn |
+| UI | Next.js 16, Tailwind CSS, shadcn/ui |
+| Search | DuckDuckGo via httpx (no API key required) |
+| Persistence | SQLite checkpointer (`.checkpoints/`) |
 
 ---
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
+- **Python 3.10+**
+- **Node.js 18+** (for the web UI)
+- An **OpenRouter API key** ([openrouter.ai](https://openrouter.ai))
 
-- Python 3.11+
-- An LLM API key (OpenRouter / Google AI / OpenAI)
+---
 
-### Setup
+## Quick Start (Full Stack)
+
+Run the API and UI in **two terminals**.
+
+### 1. Clone & configure
 
 ```bash
-# Clone
 git clone https://github.com/rrusyaidii/multi-agent-research.git
 cd multi-agent-research
 
-# Virtual environment
+# Python virtual environment
 python -m venv venv
-source venv/bin/activate   # Linux/Mac
-.\venv\Scripts\activate    # Windows
+source venv/bin/activate        # Linux / Mac
+.\venv\Scripts\activate         # Windows
 
-# Install
-pip install -e .
+# Install backend + API + test deps
+pip install -e ".[api,test]"
 
-# Environment
+# Environment variables
 cp .env.example .env
-# Edit .env with your API key
+# Edit .env — set OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-### Usage (CLI)
+### 2. Terminal 1 — API server (port 8000)
 
 ```bash
-# Single research
+research-api
+# or: uvicorn research_agent.api:app --reload --port 8000
+```
+
+Verify: `curl http://localhost:8000/health` → `{"status":"ok"}`
+
+### 3. Terminal 2 — Web UI (port 3000)
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open **http://localhost:3000**, enter a topic, and watch the agent pipeline run. The finished report appears in the right panel and is saved to `reports/{thread_id}.md`. Use **Download PDF** to export.
+
+---
+
+## CLI Only (no UI)
+
+```bash
+pip install -e .
+
+# Single research run
 python -m research_agent "AI agents market trends 2026"
 
-# With thread ID for session continuation
-python -m research_agent "Rust vs Go for backend services" --thread-id "rust-go-01"
+# With thread ID (checkpoint continuity)
+python -m research_agent "Rust vs Go for backend" --thread-id rust-go-01
 
-# Output as JSON
+# JSON output (matches API shape)
 python -m research_agent "Best frameworks for agentic AI" --format json
 ```
 
 ---
 
+## Environment Variables
+
+Copy [`.env.example`](.env.example) to `.env` and fill in:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENROUTER_API_KEY` | Yes | Your OpenRouter API key |
+| `OPENROUTER_MODEL` | No | Default: `google/gemini-2.5-flash` |
+| `MAX_LLM_CALLS` | No | Step budget per session (default: 30) |
+| `MAX_COST_PER_SESSION` | No | Cost cap in USD (default: 0.05) |
+| `API_HOST` / `API_PORT` | No | API bind address (default: `0.0.0.0:8000`) |
+| `CORS_ORIGINS` | No | Allowed origins (default: `http://localhost:3000`) |
+
+The UI proxies `/api/*` → `http://localhost:8000` via Next.js rewrites, so CORS is only needed for direct API access.
+
+---
+
+## Testing
+
+```bash
+python -m pytest tests/ -v
+cd web && npm run build
+```
+
+---
+
+## Project Structure
+
+```
+multi-agent-research/
+├── src/research_agent/
+│   ├── graph.py          # LangGraph StateGraph
+│   ├── supervisor.py     # Routing agent
+│   ├── service.py        # Shared job runner (CLI + API)
+│   ├── api.py            # FastAPI endpoints
+│   ├── cli.py            # CLI entry point
+│   ├── agents/           # search, analysis, writer
+│   └── tools/            # web_search, web_fetch
+├── web/                  # Next.js frontend
+├── tests/
+├── reports/              # Generated markdown reports (gitignored)
+└── .checkpoints/         # SQLite session state (gitignored)
+```
+
+---
+
+## What NOT to commit
+
+These are in [`.gitignore`](.gitignore) — keep them local:
+
+| Path | Why |
+|------|-----|
+| `.env` | Contains your API keys |
+| `.checkpoints/` | Local SQLite session database |
+| `reports/` | Generated report output |
+| `web/node_modules/`, `web/.next/` | Frontend build artifacts |
+| `web/.env.local` | Local frontend overrides |
+| `venv/`, `.venv/` | Python virtual environment |
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/research` | Start research job `{ "topic": "..." }` |
+| `GET` | `/status/{thread_id}` | Poll job status, steps, report |
+
+---
+
 <p align="center">
-  Built with 🦞 <a href="https://openclaw.ai">OpenClaw</a> — Haziq Rusyaidi • Jun 2026
+  Built with LangGraph — Haziq Rusyaidi • 2026
 </p>

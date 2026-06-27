@@ -1,7 +1,8 @@
-# Environment
+# Environment & secrets (never commit)
 .env
+.env.local
+.env.*.local
 *.env.local
-*.env.*.local
 
 # Python
 __pycache__/
@@ -11,6 +12,11 @@ __pycache__/
 venv/
 .venv/
 .python-version
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # Build
 dist/
@@ -18,23 +24,38 @@ build/
 *.egg-info/
 *.egg
 
-# Generated reports
-reports/
+# Generated reports (local output only)
+reports/*
 !reports/.gitkeep
 
-# IDE
+# LangGraph checkpointer (SQLite session state)
+.checkpoints/
+*.db
+*.sqlite
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
 # Docker
 .docker/
 
-# Checkpointer DB (SQLite)
-*.db
-*.sqlite
+# Cursor / local agent skills (machine-specific)
+.agents/
+skills-lock.json
+.cursor/
+
+# Next.js frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/.env*.local
