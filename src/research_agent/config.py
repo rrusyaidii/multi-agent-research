@@ -22,7 +22,8 @@ class Settings:
     max_llm_calls: int
     max_tokens_per_call: int
     tool_timeout_seconds: float
-    max_cost_per_session: float
+    max_cost_per_session_myr: float
+    estimated_cost_per_llm_call_myr: float
     checkpointer_dir: str
     log_level: str
     search_provider: str
@@ -50,7 +51,10 @@ def get_settings() -> Settings:
         max_llm_calls=int(os.getenv("MAX_LLM_CALLS", "30")),
         max_tokens_per_call=int(os.getenv("MAX_TOKENS_PER_CALL", "2000")),
         tool_timeout_seconds=float(os.getenv("TOOL_TIMEOUT_SECONDS", "10")),
-        max_cost_per_session=float(os.getenv("MAX_COST_PER_SESSION", "0.05")),
+        max_cost_per_session_myr=float(os.getenv("MAX_COST_PER_SESSION_MYR", "0.25")),
+        estimated_cost_per_llm_call_myr=float(
+            os.getenv("ESTIMATED_COST_PER_LLM_CALL_MYR", "0.01"),
+        ),
         checkpointer_dir=os.getenv("CHECKPOINTER_DIR", "./.checkpoints"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         search_provider=_resolve_search_provider(search_provider_raw, tavily_api_key),

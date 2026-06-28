@@ -4,6 +4,10 @@ A **LangGraph-powered multi-agent system** that researches any topic, analyzes f
 
 Built with a **supervisor agent** that orchestrates specialist workers (search, analysis, writing), connected through a `StateGraph` with checkpointed memory. Includes a **FastAPI backend** and **Next.js web UI**.
 
+![Research Agent UI — dark mode with live pipeline and report viewer](docs/screenshots/app-dark-report.png)
+
+*Black UI with agent pipeline, live activity (MYR budget), and structured report output. See [sample report](docs/sample-report.md).*
+
 ```
 Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
                  ↑            │            │
@@ -124,7 +128,8 @@ Copy [`.env.example`](.env.example) to `.env` and fill in:
 | `TAVILY_SEARCH_DEPTH` | No | `basic` or `advanced` (default: advanced) |
 | `OPENROUTER_MODEL` | No | Default: `google/gemini-2.5-flash` |
 | `MAX_LLM_CALLS` | No | Step budget per session (default: 30) |
-| `MAX_COST_PER_SESSION` | No | Cost cap in USD (default: 0.05) |
+| `MAX_COST_PER_SESSION_MYR` | No | Estimated cost cap in Ringgit (default: `0.25`) |
+| `ESTIMATED_COST_PER_LLM_CALL_MYR` | No | Per LLM-call estimate for budget display (default: `0.01`) |
 | `API_HOST` / `API_PORT` | No | API bind address (default: `0.0.0.0:8000`) |
 | `CORS_ORIGINS` | No | Allowed origins (default: `http://localhost:3000`) |
 

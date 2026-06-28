@@ -44,7 +44,7 @@ describe("api helpers", () => {
       step_count: 4,
       max_steps: 30,
       session_cost: null,
-      max_cost: 0.05,
+      max_cost: 0.25,
       budget_exceeded: false,
     });
 

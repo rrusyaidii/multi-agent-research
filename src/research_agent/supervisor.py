@@ -7,7 +7,8 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from research_agent.config import get_llm
+from research_agent.config import get_llm, get_settings
+from research_agent.cost import is_budget_exceeded
 from research_agent.state import AgentRoute, ResearchState, RouteDecision
 from research_agent.utils import invoke_with_retry
 
@@ -66,6 +67,15 @@ def supervisor_node(state: ResearchState) -> dict:
 
     if step_count >= max_steps:
         logger.warning("Step budget exceeded (%s/%s); forcing FINISH", step_count, max_steps)
+        return {"next_agent": "FINISH"}
+
+    max_cost_myr = get_settings().max_cost_per_session_myr
+    if is_budget_exceeded(step_count, max_cost_myr):
+        logger.warning(
+            "Cost budget exceeded (step_count=%s, cap=RM%s); forcing FINISH",
+            step_count,
+            max_cost_myr,
+        )
         return {"next_agent": "FINISH"}
 
     llm = get_llm().with_structured_output(RouteDecision)

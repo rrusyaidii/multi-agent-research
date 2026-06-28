@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AGENT_ACTIVITY, getActiveAgent } from "@/lib/agent-activity";
+import { formatMYR } from "@/lib/format-currency";
 import type { PipelineStep } from "@/lib/types";
 
 interface ActivityPanelProps {
@@ -108,12 +109,12 @@ export function ActivityPanel({
             {maxSteps > 0 ? `${stepCount}/${maxSteps}` : "Tracking…"}
           </p>
           <p>
-            <span className="font-medium text-foreground">Cost:</span>{" "}
+            <span className="font-medium text-foreground">Estimated cost (MYR):</span>{" "}
             {sessionCost == null
               ? maxCost == null
                 ? "Estimating…"
-                : `Unknown / $${maxCost.toFixed(2)}`
-              : `$${sessionCost.toFixed(4)}${maxCost == null ? "" : ` / $${maxCost.toFixed(2)}`}`}
+                : `Unknown / ${formatMYR(maxCost)}`
+              : `${formatMYR(sessionCost)}${maxCost == null ? "" : ` / ${formatMYR(maxCost)}`}`}
           </p>
           {budgetExceeded ? (
             <p className="sm:col-span-2 text-destructive" role="alert">

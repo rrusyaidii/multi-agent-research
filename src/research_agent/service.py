@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from research_agent.config import get_settings
+from research_agent.cost import estimate_session_cost_myr, is_budget_exceeded
 from research_agent.graph import compile_graph
 from research_agent.job_store import JobRecord, JobStatus, JobStore
 from research_agent.state import initial_state
@@ -173,6 +174,9 @@ def _run_job(thread_id: str) -> None:
                     final_state = merged
 
                 display_node = _resolve_display_node(node_name, merged)
+                step_count = int(merged.get("step_count", 0))
+                session_cost = estimate_session_cost_myr(step_count)
+                budget_exceeded = is_budget_exceeded(step_count, current_job.max_cost)
 
                 _job_store.update(
                     thread_id,
@@ -181,7 +185,9 @@ def _run_job(thread_id: str) -> None:
                     report=str(merged.get("report", "")),
                     analysis=str(merged.get("analysis", "")),
                     search_results=list(merged.get("search_results", [])),
-                    step_count=int(merged.get("step_count", 0)),
+                    step_count=step_count,
+                    session_cost=session_cost,
+                    budget_exceeded=budget_exceeded,
                 )
                 logger.info("Job %s: node %s completed", thread_id, node_name)
 
@@ -204,6 +210,9 @@ def _run_job(thread_id: str) -> None:
             return
 
         report_path = save_report(thread_id, report)
+        final_step_count = int(final_state.get("step_count", 0))
+        final_job = _job_store.get(thread_id)
+        max_cost = final_job.max_cost if final_job else get_settings().max_cost_per_session_myr
         _job_store.update(
             thread_id,
             status="completed",
@@ -212,7 +221,9 @@ def _run_job(thread_id: str) -> None:
             report_path=str(report_path),
             analysis=str(final_state.get("analysis", "")),
             search_results=list(final_state.get("search_results", [])),
-            step_count=int(final_state.get("step_count", 0)),
+            step_count=final_step_count,
+            session_cost=estimate_session_cost_myr(final_step_count),
+            budget_exceeded=is_budget_exceeded(final_step_count, max_cost),
             error=None,
         )
         logger.info("Job %s: completed", thread_id)
@@ -241,7 +252,7 @@ def start_research(topic: str, thread_id: str | None = None) -> JobRecord:
         status="running",
         current_node="supervisor",
         max_steps=get_settings().max_llm_calls,
-        max_cost=get_settings().max_cost_per_session,
+        max_cost=get_settings().max_cost_per_session_myr,
     )
     _job_store.set(job)
     _get_cancel_event(tid).clear()

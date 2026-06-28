@@ -42,7 +42,7 @@ test("research flow renders a mocked report", async ({ page }) => {
         step_count: 3,
         max_steps: 30,
         session_cost: null,
-        max_cost: 0.05,
+        max_cost: 0.25,
         budget_exceeded: false,
       },
     });

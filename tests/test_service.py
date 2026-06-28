@@ -79,3 +79,19 @@ class TestResolveDisplayNode:
 
     def test_writer_without_report_returns_to_supervisor(self) -> None:
         assert _resolve_display_node("writer", {"report": ""}) == "supervisor"
+
+
+class TestCostEstimates:
+    def test_estimate_session_cost_myr(self) -> None:
+        from research_agent.cost import estimate_session_cost_myr
+
+        assert estimate_session_cost_myr(0, cost_per_call=0.01) == 0.0
+        assert estimate_session_cost_myr(5, cost_per_call=0.01) == 0.05
+        assert estimate_session_cost_myr(10, cost_per_call=0.02) == 0.2
+
+    def test_is_budget_exceeded(self) -> None:
+        from research_agent.cost import is_budget_exceeded
+
+        assert is_budget_exceeded(10, max_cost_myr=0.25) is False
+        assert is_budget_exceeded(25, max_cost_myr=0.25) is True
+        assert is_budget_exceeded(0, max_cost_myr=0.0) is False

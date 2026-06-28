@@ -22,6 +22,8 @@ interface ReportHistoryProps {
   onResume: (item: ResearchHistoryItem) => void;
 }
 
+const STALE_RUNNING_MS = 30_000;
+
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -33,6 +35,20 @@ function formatDate(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function canResumeJob(item: ResearchHistoryItem): boolean {
+  if (item.status === "failed" || item.status === "cancelled") {
+    return true;
+  }
+  if (item.status !== "running") {
+    return false;
+  }
+  const updatedAt = new Date(item.updated_at).getTime();
+  if (Number.isNaN(updatedAt)) {
+    return true;
+  }
+  return Date.now() - updatedAt > STALE_RUNNING_MS;
 }
 
 export function ReportHistory({
@@ -84,7 +100,7 @@ export function ReportHistory({
                       <span className="mt-1 block text-xs text-muted-foreground">
                         {formatDate(item.updated_at)}
                       </span>
-                      {item.status === "failed" || item.status === "cancelled" ? (
+                      {canResumeJob(item) ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -92,7 +108,7 @@ export function ReportHistory({
                           className="mt-2 h-7 px-2 text-xs"
                           onClick={() => onResume(item)}
                         >
-                          Resume
+                          {item.status === "running" ? "Resume interrupted" : "Resume"}
                         </Button>
                       ) : null}
                     </div>

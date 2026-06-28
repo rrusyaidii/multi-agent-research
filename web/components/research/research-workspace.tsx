@@ -28,6 +28,7 @@ export function ResearchWorkspace() {
   const [report, setReport] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [history, setHistory] = useState<ResearchHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -121,6 +122,7 @@ export function ResearchWorkspace() {
       setIsRunning(false);
       stopPolling();
       setError(null);
+      setInfo(null);
       void loadHistory();
       return;
     }
@@ -128,8 +130,13 @@ export function ResearchWorkspace() {
     if (status.status === "failed" || status.status === "cancelled") {
       setIsRunning(false);
       stopPolling();
+      setInfo(null);
       setError(status.error ?? (status.status === "cancelled" ? "Research cancelled." : "Research failed."));
       void loadHistory();
+    }
+
+    if (status.status === "running") {
+      setInfo(null);
     }
   }, [loadHistory, stopPolling]);
 
@@ -172,6 +179,7 @@ export function ResearchWorkspace() {
     setReport(null);
     setAnalysis(null);
     setError(null);
+    setInfo(null);
     lastFocusedReportRef.current = null;
     setStepCount(0);
     setMaxSteps(0);
@@ -229,6 +237,7 @@ export function ResearchWorkspace() {
     setReport(null);
     setAnalysis(null);
     setError(null);
+    setInfo("Resuming from saved checkpoint…");
     setTopic(item.topic);
     setActiveThreadId(item.thread_id);
     threadIdRef.current = item.thread_id;
@@ -242,6 +251,7 @@ export function ResearchWorkspace() {
       watchResearch(started.thread_id);
     } catch (err) {
       setIsRunning(false);
+      setInfo(null);
       if (err instanceof ResearchApiError) {
         setError(err.message);
       } else {
@@ -253,6 +263,7 @@ export function ResearchWorkspace() {
   async function handleOpenHistory(threadId: string) {
     stopPolling();
     setError(null);
+    setInfo(null);
     try {
       const status = await getResearchStatus(threadId);
       if (status.status === "not_found") {
@@ -306,6 +317,11 @@ export function ResearchWorkspace() {
             isRunning={isRunning}
             defaultTopic={topic ?? ""}
           />
+          {info ? (
+            <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+              {info}
+            </p>
+          ) : null}
           {error ? (
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
               {error}
