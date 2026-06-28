@@ -117,6 +117,26 @@ class TestResearchStatus:
         assert data["report"] == "# Report\n\nContent here."
 
 
+class TestResearchStream:
+    def test_stream_includes_no_cache_headers(self, client: TestClient) -> None:
+        payload = {
+            "thread_id": "research-stream",
+            "topic": "AI agents",
+            "status": "completed",
+            "steps": [],
+            "report": "# Done",
+            "analysis": None,
+            "error": None,
+        }
+        with patch("research_agent.api.build_status_payload", return_value=payload):
+            with client.stream("GET", "/research/research-stream/stream") as response:
+                assert response.status_code == 200
+                assert response.headers["cache-control"] == "no-cache"
+                assert response.headers["connection"] == "keep-alive"
+                assert response.headers["x-accel-buffering"] == "no"
+                next(response.iter_lines())
+
+
 class TestResearchHistory:
     def test_history_returns_recent_items(self, client: TestClient) -> None:
         payload = [
@@ -163,3 +183,38 @@ class TestCancelResearch:
         data = response.json()
         assert data["status"] == "cancelled"
         assert data["error"] == "Research was cancelled by the user."
+
+
+class TestDeleteResearch:
+    def test_delete_returns_deleted(self, client: TestClient) -> None:
+        with patch("research_agent.api.delete_research") as delete_mock:
+            response = client.delete("/research/research-done")
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted": True}
+        delete_mock.assert_called_once_with("research-done")
+
+    def test_delete_running_returns_409(self, client: TestClient) -> None:
+        with patch(
+            "research_agent.api.delete_research",
+            side_effect=JobConflictError("Cannot delete running job"),
+        ):
+            response = client.delete("/research/research-running")
+
+        assert response.status_code == 409
+
+    def test_delete_missing_returns_404(self, client: TestClient) -> None:
+        with patch(
+            "research_agent.api.delete_research",
+            side_effect=ValueError("Unknown thread_id"),
+        ):
+            response = client.delete("/research/unknown")
+
+        assert response.status_code == 404
+
+    def test_clear_history_returns_count(self, client: TestClient) -> None:
+        with patch("research_agent.api.clear_research_history", return_value=3):
+            response = client.delete("/research")
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted_count": 3}

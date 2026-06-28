@@ -57,5 +57,13 @@ class ResearchHistoryResponse(BaseModel):
     items: list[ResearchHistoryItem]
 
 
+class ResearchDeleteResponse(BaseModel):
+    deleted: bool = True
+
+
+class ResearchClearHistoryResponse(BaseModel):
+    deleted_count: int
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"

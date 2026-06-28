@@ -15,6 +15,8 @@ from fastapi.responses import StreamingResponse
 from research_agent.graph import close_checkpointer
 from research_agent.schemas import (
     HealthResponse,
+    ResearchClearHistoryResponse,
+    ResearchDeleteResponse,
     ResearchHistoryResponse,
     ResearchRequest,
     ResearchStartResponse,
@@ -25,6 +27,8 @@ from research_agent.service import (
     build_history_payload,
     build_status_payload,
     cancel_research,
+    clear_research_history,
+    delete_research,
     start_research,
 )
 
@@ -97,6 +101,23 @@ def research_history(limit: int = 20) -> ResearchHistoryResponse:
     return ResearchHistoryResponse(items=build_history_payload(safe_limit))
 
 
+@app.delete("/research", response_model=ResearchClearHistoryResponse)
+def clear_research_history_endpoint() -> ResearchClearHistoryResponse:
+    deleted_count = clear_research_history()
+    return ResearchClearHistoryResponse(deleted_count=deleted_count)
+
+
+@app.delete("/research/{thread_id}", response_model=ResearchDeleteResponse)
+def delete_research_job(thread_id: str) -> ResearchDeleteResponse:
+    try:
+        delete_research(thread_id)
+    except JobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ResearchDeleteResponse()
+
+
 @app.post("/research/{thread_id}/cancel", response_model=ResearchStatusResponse)
 def cancel_research_job(thread_id: str) -> ResearchStatusResponse:
     job = cancel_research(thread_id)
@@ -152,7 +173,15 @@ async def research_stream(thread_id: str) -> StreamingResponse:
 
             await asyncio.sleep(0.5)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/status/{thread_id}", response_model=ResearchStatusResponse)

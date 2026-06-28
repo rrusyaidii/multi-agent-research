@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot } from "lucide-react";
 
@@ -7,10 +8,12 @@ import { ActivityPanel } from "@/components/research/activity-panel";
 import { AgentPipeline } from "@/components/research/agent-pipeline";
 import { BudgetFooter } from "@/components/research/budget-footer";
 import { ReportHistory } from "@/components/research/report-history";
-import { ReportViewer } from "@/components/research/report-viewer";
+import { ReportViewerSkeleton } from "@/components/research/report-viewer-skeleton";
 import { TopicForm } from "@/components/research/topic-form";
 import {
   cancelResearch,
+  clearResearchHistory,
+  deleteResearch,
   getResearchHistory,
   getResearchStatus,
   ResearchApiError,
@@ -23,13 +26,20 @@ import {
   createErrorLogEntry,
   createSeedLogEntry,
   diffStepsToLogEntries,
+  filterNovelLogEntries,
+  stepsEqual,
   type ActivityLogEntry,
 } from "@/lib/activity-log";
 import { IDLE_STEPS } from "@/lib/mock-data";
 import type { PipelineStep, ResearchHistoryItem, ResearchStatusResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const POLL_INTERVAL_MS = 1500;
+const ReportViewer = dynamic(
+  () => import("@/components/research/report-viewer").then((module) => module.ReportViewer),
+  { ssr: false, loading: () => <ReportViewerSkeleton /> },
+);
+
+const POLL_INTERVAL_MS = 1000;
 
 export function ResearchWorkspace() {
   const [isRunning, setIsRunning] = useState(false);
@@ -45,6 +55,8 @@ export function ResearchWorkspace() {
   const [maxCost, setMaxCost] = useState<number | null>(null);
   const [budgetExceeded, setBudgetExceeded] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const threadIdRef = useRef<string | null>(null);
@@ -71,7 +83,11 @@ export function ResearchWorkspace() {
     }
     const threadId = threadIdRef.current;
     setActivityLog((prev) => {
-      const next = [...prev, ...entries];
+      const novel = filterNovelLogEntries(prev, entries);
+      if (novel.length === 0) {
+        return prev;
+      }
+      const next = [...prev, ...novel];
       if (threadId) {
         activityLogCacheRef.current.set(threadId, next);
       }
@@ -141,7 +157,9 @@ export function ResearchWorkspace() {
 
     const prevSteps = stepsRef.current;
     const nextSteps = status.steps;
-    appendActivityLog(diffStepsToLogEntries(prevSteps, nextSteps));
+    if (!stepsEqual(prevSteps, nextSteps)) {
+      appendActivityLog(diffStepsToLogEntries(prevSteps, nextSteps));
+    }
     stepsRef.current = nextSteps;
     setSteps(nextSteps);
     setTopic(status.topic);
@@ -199,7 +217,7 @@ export function ResearchWorkspace() {
     }
   }, [applyStatus, appendActivityLog, stopPolling]);
 
-  const startPollingFallback = useCallback((threadId: string) => {
+  const startStatusPolling = useCallback((threadId: string) => {
     if (pollRef.current) {
       return;
     }
@@ -210,14 +228,38 @@ export function ResearchWorkspace() {
   }, [pollStatus]);
 
   const watchResearch = useCallback((threadId: string) => {
+    startStatusPolling(threadId);
     streamRef.current = subscribeResearchStatus(
       threadId,
       applyStatus,
-      () => startPollingFallback(threadId),
+      () => {
+        // Polling already runs in parallel if SSE fails.
+      },
     );
-  }, [applyStatus, startPollingFallback]);
+  }, [applyStatus, startStatusPolling]);
 
-  function resetRunState(submittedTopic: string) {
+  const clearActiveSessionIfRemoved = useCallback((threadId: string) => {
+    if (activeThreadId !== threadId) {
+      activityLogCacheRef.current.delete(threadId);
+      return;
+    }
+
+    stopPolling();
+    threadIdRef.current = null;
+    setActiveThreadId(null);
+    setTopic(null);
+    setReport(null);
+    setSteps(IDLE_STEPS);
+    stepsRef.current = IDLE_STEPS;
+    setActivityLog([]);
+    setSessionCost(null);
+    setMaxCost(null);
+    setBudgetExceeded(false);
+    setIsRunning(false);
+    activityLogCacheRef.current.delete(threadId);
+  }, [activeThreadId, stopPolling]);
+
+  const resetRunState = useCallback((submittedTopic: string) => {
     stopPolling();
     setIsRunning(true);
     setReport(null);
@@ -234,9 +276,9 @@ export function ResearchWorkspace() {
     stepsRef.current = initialSteps;
     setSteps(initialSteps);
     setActivityLog([createSeedLogEntry()]);
-  }
+  }, [stopPolling]);
 
-  async function handleSubmit(submittedTopic: string) {
+  const handleSubmit = useCallback(async (submittedTopic: string) => {
     resetRunState(submittedTopic);
 
     try {
@@ -254,9 +296,9 @@ export function ResearchWorkspace() {
       setError(message);
       appendActivityLog([createErrorLogEntry(message)]);
     }
-  }
+  }, [appendActivityLog, pollStatus, resetRunState, setActivityLogForThread, watchResearch]);
 
-  async function handleCancel() {
+  const handleCancel = useCallback(async () => {
     const threadId = threadIdRef.current;
     stopPolling();
     if (threadId) {
@@ -281,9 +323,9 @@ export function ResearchWorkspace() {
     setIsRunning(false);
     setTopic(null);
     setReport(null);
-  }
+  }, [appendActivityLog, loadHistory, stopPolling]);
 
-  async function handleResumeHistory(item: ResearchHistoryItem) {
+  const handleResumeHistory = useCallback(async (item: ResearchHistoryItem) => {
     resetRunState(item.topic);
     setInfo("Resuming from saved checkpoint…");
     setActiveThreadId(item.thread_id);
@@ -303,9 +345,9 @@ export function ResearchWorkspace() {
       setError(message);
       appendActivityLog([createErrorLogEntry(message)]);
     }
-  }
+  }, [appendActivityLog, pollStatus, resetRunState, setActivityLogForThread, watchResearch]);
 
-  async function handleOpenHistory(threadId: string) {
+  const handleOpenHistory = useCallback(async (threadId: string) => {
     stopPolling();
     setError(null);
     setInfo(null);
@@ -352,7 +394,57 @@ export function ResearchWorkspace() {
         : "Unable to open saved report.";
       setError(message);
     }
-  }
+  }, [setActivityLogForThread, stopPolling, watchResearch]);
+
+  const handleDeleteHistory = useCallback(async (threadId: string) => {
+    setDeletingId(threadId);
+    setError(null);
+    try {
+      await deleteResearch(threadId);
+      clearActiveSessionIfRemoved(threadId);
+      await loadHistory();
+    } catch (err) {
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to delete report.";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [clearActiveSessionIfRemoved, loadHistory]);
+
+  const handleClearHistory = useCallback(async () => {
+    if (!window.confirm("Delete all saved reports? Running jobs will be kept.")) {
+      return;
+    }
+
+    setIsClearing(true);
+    setError(null);
+    const previousActiveId = activeThreadId;
+    try {
+      await clearResearchHistory();
+      const response = await getResearchHistory();
+      setHistory(response.items);
+
+      if (previousActiveId && !response.items.some((item) => item.thread_id === previousActiveId)) {
+        clearActiveSessionIfRemoved(previousActiveId);
+      }
+
+      const remainingIds = new Set(response.items.map((item) => item.thread_id));
+      for (const threadId of activityLogCacheRef.current.keys()) {
+        if (!remainingIds.has(threadId)) {
+          activityLogCacheRef.current.delete(threadId);
+        }
+      }
+    } catch (err) {
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to clear report history.";
+      setError(message);
+    } finally {
+      setIsClearing(false);
+    }
+  }, [activeThreadId, clearActiveSessionIfRemoved]);
 
   return (
     <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -403,8 +495,12 @@ export function ResearchWorkspace() {
             reports={history}
             isLoading={isHistoryLoading}
             activeThreadId={activeThreadId}
+            deletingId={deletingId}
+            isClearing={isClearing}
             onOpen={handleOpenHistory}
             onResume={handleResumeHistory}
+            onDelete={handleDeleteHistory}
+            onClearAll={handleClearHistory}
           />
         </div>
         <div

@@ -83,6 +83,20 @@ export async function cancelResearch(threadId: string): Promise<ResearchStatusRe
   return handleResponse<ResearchStatusResponse>(response);
 }
 
+export async function deleteResearch(threadId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/research/${encodeURIComponent(threadId)}`, {
+    method: "DELETE",
+  });
+  await handleResponse<{ deleted: boolean }>(response);
+}
+
+export async function clearResearchHistory(): Promise<{ deleted_count: number }> {
+  const response = await fetch(`${API_BASE}/research`, {
+    method: "DELETE",
+  });
+  return handleResponse<{ deleted_count: number }>(response);
+}
+
 export function subscribeResearchStatus(
   threadId: string,
   onStatus: (status: ResearchStatusResponse) => void,

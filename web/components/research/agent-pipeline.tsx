@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import {
   BarChart3,
   Check,
@@ -127,7 +128,7 @@ function getLiveAnnouncement(
   return "Research in progress.";
 }
 
-export function AgentPipeline({ steps, isRunning, hasReport = false }: AgentPipelineProps) {
+export const AgentPipeline = memo(function AgentPipeline({ steps, isRunning, hasReport = false }: AgentPipelineProps) {
   const liveMessage = getLiveAnnouncement(steps, isRunning, hasReport);
 
   return (
@@ -218,4 +219,4 @@ export function AgentPipeline({ steps, isRunning, hasReport = false }: AgentPipe
       </CardContent>
     </Card>
   );
-}
+});

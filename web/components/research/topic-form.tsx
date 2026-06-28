@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Play, X, FileEdit } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import { SectionHeader } from "@/components/research/section-header";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ interface TopicFormProps {
   defaultTopic?: string;
 }
 
-export function TopicForm({
+export const TopicForm = memo(function TopicForm({
   onSubmit,
   onCancel,
   isRunning,
@@ -156,4 +156,4 @@ export function TopicForm({
       </CardContent>
     </Card>
   );
-}
+});

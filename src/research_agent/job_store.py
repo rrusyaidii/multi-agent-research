@@ -216,3 +216,18 @@ class JobStore:
                         report_path=str(report_path),
                     )
                 )
+
+    def delete(self, thread_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute("DELETE FROM jobs WHERE thread_id = ?", (thread_id,))
+            return cursor.rowcount > 0
+
+    def delete_all_finished(self) -> list[JobRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE status != ?",
+                ("running",),
+            ).fetchall()
+            jobs = [self._row_to_job(row) for row in rows]
+            conn.execute("DELETE FROM jobs WHERE status != ?", ("running",))
+            return jobs

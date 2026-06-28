@@ -25,6 +25,41 @@ export function formatLogTime(date = new Date()): string {
   });
 }
 
+export function stepsEqual(prev: PipelineStep[], next: PipelineStep[]): boolean {
+  if (prev.length !== next.length) {
+    return false;
+  }
+  return prev.every(
+    (step, index) =>
+      step.agent === next[index]?.agent && step.status === next[index]?.status,
+  );
+}
+
+function activeMessage(agent: AgentStep): string {
+  return AGENT_ACTIVITY[agent].active.replace(/…$/, "...");
+}
+
+function doneMessage(agent: AgentStep): string {
+  if (agent === "finish") {
+    return "Report generated successfully";
+  }
+  return AGENT_ACTIVITY[agent].done;
+}
+
+function pushLogEntry(
+  entries: ActivityLogEntry[],
+  agent: string,
+  message: string,
+  tick: number,
+): number {
+  entries.push({
+    time: formatLogTime(new Date(Date.now() + tick * 1000)),
+    agent,
+    message,
+  });
+  return tick + 1;
+}
+
 export function createSeedLogEntry(): ActivityLogEntry {
   return {
     time: formatLogTime(),
@@ -38,7 +73,7 @@ export function diffStepsToLogEntries(
   next: PipelineStep[],
 ): ActivityLogEntry[] {
   const entries: ActivityLogEntry[] = [];
-  const time = formatLogTime();
+  let tick = 0;
 
   for (let index = 0; index < next.length; index += 1) {
     const prevStep = prev[index];
@@ -49,43 +84,59 @@ export function diffStepsToLogEntries(
 
     const label = AGENT_LABELS[nextStep.agent];
 
+    if (prevStep.status === "idle" && nextStep.status === "done") {
+      tick = pushLogEntry(entries, label, activeMessage(nextStep.agent), tick);
+      if (nextStep.agent === "finish") {
+        tick = pushLogEntry(entries, "Done", doneMessage("finish"), tick);
+      } else {
+        tick = pushLogEntry(entries, label, doneMessage(nextStep.agent), tick);
+      }
+      continue;
+    }
+
     if (nextStep.status === "active") {
-      entries.push({
-        time,
-        agent: label,
-        message: AGENT_ACTIVITY[nextStep.agent].active.replace(/…$/, "..."),
-      });
+      tick = pushLogEntry(entries, label, activeMessage(nextStep.agent), tick);
       continue;
     }
 
     if (nextStep.status === "done" && nextStep.agent === "finish") {
-      entries.push({
-        time,
-        agent: "Done",
-        message: "Report generated successfully",
-      });
+      tick = pushLogEntry(entries, "Done", doneMessage("finish"), tick);
       continue;
     }
 
     if (nextStep.status === "done") {
-      entries.push({
-        time,
-        agent: label,
-        message: AGENT_ACTIVITY[nextStep.agent].done,
-      });
+      tick = pushLogEntry(entries, label, doneMessage(nextStep.agent), tick);
       continue;
     }
 
     if (nextStep.status === "error") {
-      entries.push({
-        time,
-        agent: label,
-        message: "Encountered an error",
-      });
+      tick = pushLogEntry(entries, label, "Encountered an error", tick);
     }
   }
 
   return entries;
+}
+
+export function filterNovelLogEntries(
+  prev: ActivityLogEntry[],
+  entries: ActivityLogEntry[],
+): ActivityLogEntry[] {
+  const novel: ActivityLogEntry[] = [];
+  let lastKey =
+    prev.length > 0
+      ? `${prev[prev.length - 1].agent}:${prev[prev.length - 1].message}`
+      : "";
+
+  for (const entry of entries) {
+    const key = `${entry.agent}:${entry.message}`;
+    if (key === lastKey) {
+      continue;
+    }
+    novel.push(entry);
+    lastKey = key;
+  }
+
+  return novel;
 }
 
 export function createCompletionLogEntry(): ActivityLogEntry {

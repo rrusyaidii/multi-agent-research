@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getResearchHistory, getResearchStatus, startResearch } from "@/lib/api";
+import {
+  clearResearchHistory,
+  deleteResearch,
+  getResearchHistory,
+  getResearchStatus,
+  startResearch,
+} from "@/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -60,5 +66,26 @@ describe("api helpers", () => {
     const history = await getResearchHistory();
 
     expect(history.items).toHaveLength(1);
+  });
+
+  it("deletes a research job", async () => {
+    const fetchMock = mockFetch({ deleted: true });
+
+    await deleteResearch("research-test");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/research/research-test", {
+      method: "DELETE",
+    });
+  });
+
+  it("clears research history", async () => {
+    const fetchMock = mockFetch({ deleted_count: 2 });
+
+    const result = await clearResearchHistory();
+
+    expect(result.deleted_count).toBe(2);
+    expect(fetchMock).toHaveBeenCalledWith("/api/research", {
+      method: "DELETE",
+    });
   });
 });

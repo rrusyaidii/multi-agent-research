@@ -291,6 +291,31 @@ def cancel_research(thread_id: str) -> JobRecord | None:
     return _job_store.get(thread_id)
 
 
+def _delete_report_file(job: JobRecord) -> None:
+    path = Path(job.report_path) if job.report_path else REPORTS_DIR / f"{job.thread_id}.md"
+    if path.is_file():
+        path.unlink()
+
+
+def delete_research(thread_id: str) -> None:
+    job = _job_store.get(thread_id)
+    if job is None:
+        msg = f"Unknown thread_id: {thread_id}"
+        raise ValueError(msg)
+    if job.status == "running":
+        raise JobConflictError(f"Cannot delete running job: {thread_id}")
+    _delete_report_file(job)
+    if not _job_store.delete(thread_id):
+        raise ValueError(f"Unknown thread_id: {thread_id}")
+
+
+def clear_research_history() -> int:
+    deleted_jobs = _job_store.delete_all_finished()
+    for job in deleted_jobs:
+        _delete_report_file(job)
+    return len(deleted_jobs)
+
+
 def list_jobs(limit: int = 20) -> list[JobRecord]:
     return _job_store.list_recent(limit=limit)
 

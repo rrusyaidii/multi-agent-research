@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Info } from "lucide-react";
 
 import { formatMYR } from "@/lib/format-currency";
@@ -13,7 +14,7 @@ interface BudgetFooterProps {
   className?: string;
 }
 
-export function BudgetFooter({
+export const BudgetFooter = memo(function BudgetFooter({
   isRunning,
   sessionCost,
   maxCost,
@@ -61,4 +62,4 @@ export function BudgetFooter({
       </div>
     </div>
   );
-}
+});

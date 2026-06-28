@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Activity, CheckCircle2 } from "lucide-react";
 
 import { SectionHeader } from "@/components/research/section-header";
@@ -16,7 +16,7 @@ interface ActivityPanelProps {
   isRunning: boolean;
 }
 
-export function ActivityPanel({ activityLog, isRunning }: ActivityPanelProps) {
+export const ActivityPanel = memo(function ActivityPanel({ activityLog, isRunning }: ActivityPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,4 +84,4 @@ export function ActivityPanel({ activityLog, isRunning }: ActivityPanelProps) {
       </CardContent>
     </Card>
   );
-}
+});

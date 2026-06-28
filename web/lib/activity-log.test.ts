@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildActivityLogFromSteps,
   createSeedLogEntry,
   diffStepsToLogEntries,
+  filterNovelLogEntries,
   formatLogTime,
+  stepsEqual,
 } from "@/lib/activity-log";
 import { buildCompletedSession, IDLE_STEPS } from "@/lib/mock-data";
 
@@ -29,6 +31,63 @@ describe("activity-log", () => {
     const entries = diffStepsToLogEntries(prev, next);
     expect(entries).toHaveLength(1);
     expect(entries[0]?.agent).toBe("Supervisor");
+  });
+
+  it("idle to done emits active and done messages", () => {
+    const prev = IDLE_STEPS;
+    const next = IDLE_STEPS.map((step, index) =>
+      index === 1 ? { ...step, status: "done" as const } : step,
+    );
+
+    const entries = diffStepsToLogEntries(prev, next);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.agent).toBe("Search");
+    expect(entries[0]?.message).toContain("Searching");
+    expect(entries[1]?.message).toBe("Sources collected");
+  });
+
+  it("assigns distinct timestamps per entry in a multi-transition diff", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T15:42:00"));
+
+    try {
+      const prev = IDLE_STEPS;
+      const next = IDLE_STEPS.map((step, index) => {
+        if (index === 0) {
+          return { ...step, status: "done" as const };
+        }
+        if (index === 1) {
+          return { ...step, status: "done" as const };
+        }
+        return step;
+      });
+
+      const entries = diffStepsToLogEntries(prev, next);
+      expect(entries.length).toBeGreaterThan(2);
+      const times = new Set(entries.map((entry) => entry.time));
+      expect(times.size).toBe(entries.length);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("compares pipeline steps by agent and status", () => {
+    const a = IDLE_STEPS;
+    const b = IDLE_STEPS.map((step, index) =>
+      index === 0 ? { ...step, status: "active" as const } : step,
+    );
+    expect(stepsEqual(a, a)).toBe(true);
+    expect(stepsEqual(a, b)).toBe(false);
+  });
+
+  it("filters consecutive duplicate log entries", () => {
+    const prev = [{ time: "12:00:00", agent: "Search", message: "Sources collected" }];
+    const entries = [
+      { time: "12:00:01", agent: "Search", message: "Sources collected" },
+      { time: "12:00:02", agent: "Analysis", message: "Analyzing and synthesizing findings..." },
+    ];
+    expect(filterNovelLogEntries(prev, entries)).toHaveLength(1);
+    expect(filterNovelLogEntries(prev, entries)[0]?.agent).toBe("Analysis");
   });
 
   it("builds log from a completed five-step run", () => {

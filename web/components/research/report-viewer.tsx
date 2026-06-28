@@ -1,11 +1,9 @@
 "use client";
 
+import { memo, useState } from "react";
 import { Download, FileText, Loader2, Check } from "lucide-react";
-import type { ReactNode } from "react";
-import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
+import { ReportMarkdown } from "@/components/research/report-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,15 +22,7 @@ interface ReportViewerProps {
   isRunning: boolean;
 }
 
-function formatReportDate(date = new Date()): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
-function ReportSkeleton() {
+function ReportGeneratingSkeleton() {
   return (
     <div className="flex flex-1 flex-col gap-4 rounded-lg border border-dashed border-border bg-muted/30 p-6">
       <div className="h-6 w-2/3 animate-pulse rounded-md bg-muted" />
@@ -42,12 +32,6 @@ function ReportSkeleton() {
         <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
         <div className="h-3 w-4/6 animate-pulse rounded bg-muted" />
       </div>
-      <div className="mt-2 space-y-3">
-        <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-        <div className="h-3 w-full animate-pulse rounded bg-muted" />
-        <div className="h-3 w-full animate-pulse rounded bg-muted" />
-        <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-      </div>
       <p className="mt-auto text-center text-xs text-muted-foreground">
         Agents are compiling your report…
       </p>
@@ -55,85 +39,11 @@ function ReportSkeleton() {
   );
 }
 
-const markdownComponents = {
-  h1: ({ children }: { children?: ReactNode }) => (
-    <h1 className="mb-4 border-b border-primary/30 pb-3 font-serif text-2xl font-semibold tracking-tight text-foreground">
-      {children}
-    </h1>
-  ),
-  h2: ({ children }: { children?: ReactNode }) => (
-    <h2 className="mt-6 mb-3 font-serif text-lg font-semibold text-primary">
-      {children}
-    </h2>
-  ),
-  h3: ({ children }: { children?: ReactNode }) => (
-    <h3 className="mt-4 mb-2 text-base font-semibold text-foreground/90">{children}</h3>
-  ),
-  p: ({ children }: { children?: ReactNode }) => (
-    <p className="mb-3 text-sm leading-relaxed text-muted-foreground">{children}</p>
-  ),
-  ul: ({ children }: { children?: ReactNode }) => (
-    <ul className="my-2 ml-4 list-disc space-y-2">{children}</ul>
-  ),
-  ol: ({ children }: { children?: ReactNode }) => (
-    <ol className="my-2 ml-4 list-decimal space-y-2">{children}</ol>
-  ),
-  li: ({ children }: { children?: ReactNode }) => (
-    <li className="text-sm leading-relaxed text-muted-foreground">{children}</li>
-  ),
-  strong: ({ children }: { children?: ReactNode }) => (
-    <strong className="font-semibold text-foreground">{children}</strong>
-  ),
-  hr: () => <hr className="my-6 border-border" />,
-  em: ({ children }: { children?: ReactNode }) => (
-    <em className="text-xs italic text-muted-foreground">{children}</em>
-  ),
-  a: ({ children, href }: { children?: ReactNode; href?: string }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
-    >
-      {children}
-    </a>
-  ),
-  blockquote: ({ children }: { children?: ReactNode }) => (
-    <blockquote className="my-4 border-l-2 border-primary/60 bg-muted/40 py-2 pr-3 pl-4 text-sm leading-relaxed text-muted-foreground">
-      {children}
-    </blockquote>
-  ),
-  table: ({ children }: { children?: ReactNode }) => (
-    <div className="my-4 overflow-x-auto rounded-lg border border-border">
-      <table className="min-w-full border-collapse text-left text-xs">{children}</table>
-    </div>
-  ),
-  thead: ({ children }: { children?: ReactNode }) => (
-    <thead className="bg-primary/10 text-foreground">{children}</thead>
-  ),
-  th: ({ children }: { children?: ReactNode }) => (
-    <th className="border-b border-r border-border px-3 py-2 align-top font-semibold last:border-r-0">
-      {children}
-    </th>
-  ),
-  td: ({ children }: { children?: ReactNode }) => (
-    <td className="border-b border-r border-border px-3 py-2 align-top text-muted-foreground last:border-r-0">
-      {children}
-    </td>
-  ),
-  code: ({ children }: { children?: ReactNode }) => (
-    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-      {children}
-    </code>
-  ),
-  pre: ({ children }: { children?: ReactNode }) => (
-    <pre className="my-4 overflow-x-auto rounded-lg border border-border bg-background p-4 text-xs leading-relaxed text-foreground">
-      {children}
-    </pre>
-  ),
-};
-
-export function ReportViewer({ report, topic, isRunning }: ReportViewerProps) {
+export const ReportViewer = memo(function ReportViewer({
+  report,
+  topic,
+  isRunning,
+}: ReportViewerProps) {
   const hasReport = Boolean(report);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -237,7 +147,7 @@ export function ReportViewer({ report, topic, isRunning }: ReportViewerProps) {
       >
         {isRunning && !hasReport ? (
           <div className="flex min-h-[280px] w-full flex-1 flex-col">
-            <ReportSkeleton />
+            <ReportGeneratingSkeleton />
           </div>
         ) : !hasReport ? (
           <div className="flex min-h-[280px] w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
@@ -252,23 +162,10 @@ export function ReportViewer({ report, topic, isRunning }: ReportViewerProps) {
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-border bg-muted/30"
             aria-label="Generated research report"
           >
-            <article
-              className={cn(
-                "report-prose p-5 sm:p-6",
-                "animate-in fade-in slide-in-from-bottom-2 duration-500",
-              )}
-              tabIndex={-1}
-            >
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {report!}
-              </ReactMarkdown>
-              <p className="mt-8 border-t border-border/60 pt-4 text-xs italic text-muted-foreground">
-                Report generated on {formatReportDate()} by Multi-Agent Research
-              </p>
-            </article>
+            <ReportMarkdown report={report!} />
           </div>
         )}
       </CardContent>
     </Card>
   );
-}
+});
