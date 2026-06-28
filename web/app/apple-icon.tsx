@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-import { BRAND_COLORS, FLASK_CONICAL_PATHS } from "@/lib/brand-icon";
+import { BRAND_COLORS, BOT_ICON_PATHS, BOT_ICON_RECT } from "@/lib/brand-icon";
 
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
@@ -29,9 +29,10 @@ export default function AppleIcon() {
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          {FLASK_CONICAL_PATHS.map((d) => (
+          {BOT_ICON_PATHS.map((d) => (
             <path key={d} d={d} />
           ))}
+          <rect {...BOT_ICON_RECT} />
         </svg>
       </div>
     ),

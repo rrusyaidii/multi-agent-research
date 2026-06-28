@@ -32,7 +32,7 @@ export function SiteFooter() {
     <footer className="mt-auto border-t border-border bg-card/50">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-4 sm:flex-row sm:px-6 lg:px-8">
         <p className="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Research Agent
+          © {new Date().getFullYear()} Multi-Agent Research
         </p>
         {apiConnected === true ? (
           <Badge variant="outline" className="border-primary/40 bg-primary/10 text-xs font-normal text-primary">

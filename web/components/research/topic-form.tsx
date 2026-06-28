@@ -1,15 +1,13 @@
 "use client";
 
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, Play, X, FileEdit } from "lucide-react";
 import { useState } from "react";
 
+import { SectionHeader } from "@/components/research/section-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -63,62 +61,48 @@ export function TopicForm({
         isRunning && "card-accent-active",
       )}
     >
-      <CardHeader>
-        <CardTitle className="font-serif text-xl">Research topic</CardTitle>
-        <CardDescription>
-          Enter a topic and the agent pipeline will search, analyze, and compile a report.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
+        <SectionHeader number={1} title="Research Topic" icon={FileEdit} />
+
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-2">
-            <label htmlFor="research-topic" className="text-sm font-medium">
-              Topic
-            </label>
             <div className="relative">
-              <Search
-                className="pointer-events-none absolute top-3 left-3 size-4 text-muted-foreground"
-                aria-hidden
-              />
               <Textarea
                 id="research-topic"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder="e.g. PC build relevance in 2026: Intel Core i5-12400F, RTX 3060 12GB, 16GB RAM"
-                className="min-h-24 resize-y pl-9"
+                placeholder="e.g. VPS hosting providers in Malaysia 2026. Compare pricing, RAM, storage, bandwidth and key features."
+                className="min-h-28 resize-y bg-background/50"
                 disabled={isRunning}
                 maxLength={TOPIC_MAX_LENGTH + 50}
                 aria-invalid={Boolean(validationMessage)}
                 aria-describedby="research-topic-help research-topic-count"
               />
-            </div>
-            <div className="flex items-start justify-between gap-3 text-xs">
-              <p
-                id="research-topic-help"
-                className={cn(
-                  "text-muted-foreground",
-                  validationMessage && "text-destructive",
-                )}
-              >
-                {validationMessage ?? "Use a clear question or detailed topic. 3-500 characters."}
-              </p>
               <p
                 id="research-topic-count"
                 className={cn(
-                  "shrink-0 text-muted-foreground",
+                  "pointer-events-none absolute right-3 bottom-2 text-xs text-muted-foreground",
                   topicLength > TOPIC_MAX_LENGTH && "text-destructive",
                 )}
               >
-                {topicLength}/{TOPIC_MAX_LENGTH}
+                {topicLength} / {TOPIC_MAX_LENGTH}
               </p>
             </div>
+            {validationMessage ? (
+              <p
+                id="research-topic-help"
+                className="text-xs text-destructive"
+              >
+                {validationMessage}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button
               type="submit"
               disabled={!canSubmit || isRunning}
-              className="h-11 min-w-[140px] flex-1 bg-primary px-6 sm:flex-none"
+              className="h-11 w-full bg-primary px-6 text-primary-foreground hover:bg-primary/90"
             >
               {isRunning ? (
                 <>
@@ -126,7 +110,10 @@ export function TopicForm({
                   Researching…
                 </>
               ) : (
-                "Start research"
+                <>
+                  <Play className="size-4 fill-current" />
+                  Start research
+                </>
               )}
             </Button>
             {isRunning && onCancel && (

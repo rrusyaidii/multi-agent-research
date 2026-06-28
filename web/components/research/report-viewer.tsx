@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileText, Loader2 } from "lucide-react";
+import { Download, FileText, Loader2, Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -22,6 +22,14 @@ interface ReportViewerProps {
   report: string | null;
   topic: string | null;
   isRunning: boolean;
+}
+
+function formatReportDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function ReportSkeleton() {
@@ -49,12 +57,12 @@ function ReportSkeleton() {
 
 const markdownComponents = {
   h1: ({ children }: { children?: ReactNode }) => (
-    <h1 className="mb-4 font-serif text-2xl font-semibold tracking-tight text-foreground">
+    <h1 className="mb-4 border-b border-primary/30 pb-3 font-serif text-2xl font-semibold tracking-tight text-foreground">
       {children}
     </h1>
   ),
   h2: ({ children }: { children?: ReactNode }) => (
-    <h2 className="mt-6 mb-3 border-l-2 border-primary pl-3 font-serif text-lg font-semibold text-foreground">
+    <h2 className="mt-6 mb-3 font-serif text-lg font-semibold text-primary">
       {children}
     </h2>
   ),
@@ -189,7 +197,11 @@ export function ReportViewer({ report, topic, isRunning }: ReportViewerProps) {
                     </>
                   )}
                 </Button>
-                <Badge className="bg-primary/15 text-primary hover:bg-primary/15">
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/10"
+                >
+                  <Check className="mr-1 size-3" aria-hidden />
                   Ready
                 </Badge>
               </>
@@ -250,6 +262,9 @@ export function ReportViewer({ report, topic, isRunning }: ReportViewerProps) {
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {report!}
               </ReactMarkdown>
+              <p className="mt-8 border-t border-border/60 pt-4 text-xs italic text-muted-foreground">
+                Report generated on {formatReportDate()} by Multi-Agent Research
+              </p>
             </article>
           </div>
         )}

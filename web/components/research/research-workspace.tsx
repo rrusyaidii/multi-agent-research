@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot } from "lucide-react";
 
 import { ActivityPanel } from "@/components/research/activity-panel";
 import { AgentPipeline } from "@/components/research/agent-pipeline";
+import { BudgetFooter } from "@/components/research/budget-footer";
 import { ReportHistory } from "@/components/research/report-history";
 import { ReportViewer } from "@/components/research/report-viewer";
 import { TopicForm } from "@/components/research/topic-form";
@@ -15,6 +17,14 @@ import {
   startResearch,
   subscribeResearchStatus,
 } from "@/lib/api";
+import {
+  buildActivityLogFromSteps,
+  createCompletionLogEntry,
+  createErrorLogEntry,
+  createSeedLogEntry,
+  diffStepsToLogEntries,
+  type ActivityLogEntry,
+} from "@/lib/activity-log";
 import { IDLE_STEPS } from "@/lib/mock-data";
 import type { PipelineStep, ResearchHistoryItem, ResearchStatusResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -26,21 +36,48 @@ export function ResearchWorkspace() {
   const [steps, setSteps] = useState<PipelineStep[]>(IDLE_STEPS);
   const [topic, setTopic] = useState<string | null>(null);
   const [report, setReport] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [history, setHistory] = useState<ResearchHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [stepCount, setStepCount] = useState(0);
-  const [maxSteps, setMaxSteps] = useState(0);
   const [sessionCost, setSessionCost] = useState<number | null>(null);
   const [maxCost, setMaxCost] = useState<number | null>(null);
   const [budgetExceeded, setBudgetExceeded] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const threadIdRef = useRef<string | null>(null);
   const lastFocusedReportRef = useRef<string | null>(null);
+  const stepsRef = useRef<PipelineStep[]>(IDLE_STEPS);
+  const activityLogCacheRef = useRef<Map<string, ActivityLogEntry[]>>(new Map());
+
+  const setActivityLogForThread = useCallback((
+    threadId: string | null,
+    value: ActivityLogEntry[] | ((prev: ActivityLogEntry[]) => ActivityLogEntry[]),
+  ) => {
+    setActivityLog((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      if (threadId && next.length > 0) {
+        activityLogCacheRef.current.set(threadId, next);
+      }
+      return next;
+    });
+  }, []);
+
+  const appendActivityLog = useCallback((entries: ActivityLogEntry[]) => {
+    if (entries.length === 0) {
+      return;
+    }
+    const threadId = threadIdRef.current;
+    setActivityLog((prev) => {
+      const next = [...prev, ...entries];
+      if (threadId) {
+        activityLogCacheRef.current.set(threadId, next);
+      }
+      return next;
+    });
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -102,17 +139,15 @@ export function ResearchWorkspace() {
       return;
     }
 
-    setSteps(status.steps);
+    const prevSteps = stepsRef.current;
+    const nextSteps = status.steps;
+    appendActivityLog(diffStepsToLogEntries(prevSteps, nextSteps));
+    stepsRef.current = nextSteps;
+    setSteps(nextSteps);
     setTopic(status.topic);
-    setStepCount(status.step_count);
-    setMaxSteps(status.max_steps);
     setSessionCost(status.session_cost);
     setMaxCost(status.max_cost);
     setBudgetExceeded(status.budget_exceeded);
-
-    if (status.analysis) {
-      setAnalysis(status.analysis);
-    }
 
     if (status.report) {
       setReport(status.report);
@@ -123,6 +158,12 @@ export function ResearchWorkspace() {
       stopPolling();
       setError(null);
       setInfo(null);
+      setActivityLogForThread(status.thread_id, (prev) => {
+        const hasDoneEntry = prev.some(
+          (entry) => entry.agent === "Done" && entry.message.includes("successfully"),
+        );
+        return hasDoneEntry ? prev : [...prev, createCompletionLogEntry()];
+      });
       void loadHistory();
       return;
     }
@@ -131,14 +172,17 @@ export function ResearchWorkspace() {
       setIsRunning(false);
       stopPolling();
       setInfo(null);
-      setError(status.error ?? (status.status === "cancelled" ? "Research cancelled." : "Research failed."));
+      const errorMessage = status.error
+        ?? (status.status === "cancelled" ? "Research cancelled." : "Research failed.");
+      setError(errorMessage);
+      appendActivityLog([createErrorLogEntry(errorMessage)]);
       void loadHistory();
     }
 
     if (status.status === "running") {
       setInfo(null);
     }
-  }, [loadHistory, stopPolling]);
+  }, [appendActivityLog, loadHistory, setActivityLogForThread, stopPolling]);
 
   const pollStatus = useCallback(async (threadId: string) => {
     try {
@@ -147,13 +191,13 @@ export function ResearchWorkspace() {
     } catch (err) {
       setIsRunning(false);
       stopPolling();
-      if (err instanceof ResearchApiError) {
-        setError(err.message);
-      } else {
-        setError("Unable to reach the research API. Is it running on port 8000?");
-      }
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to reach the research API. Is it running on port 8000?";
+      setError(message);
+      appendActivityLog([createErrorLogEntry(message)]);
     }
-  }, [applyStatus, stopPolling]);
+  }, [applyStatus, appendActivityLog, stopPolling]);
 
   const startPollingFallback = useCallback((threadId: string) => {
     if (pollRef.current) {
@@ -173,37 +217,42 @@ export function ResearchWorkspace() {
     );
   }, [applyStatus, startPollingFallback]);
 
-  async function handleSubmit(submittedTopic: string) {
+  function resetRunState(submittedTopic: string) {
     stopPolling();
     setIsRunning(true);
     setReport(null);
-    setAnalysis(null);
     setError(null);
     setInfo(null);
     lastFocusedReportRef.current = null;
-    setStepCount(0);
-    setMaxSteps(0);
     setSessionCost(null);
     setMaxCost(null);
     setBudgetExceeded(false);
     setTopic(submittedTopic);
-    setSteps(IDLE_STEPS.map((step, index) =>
-      index === 0 ? { ...step, status: "active" } : step,
-    ));
+    const initialSteps = IDLE_STEPS.map((step, index) =>
+      index === 0 ? { ...step, status: "active" as const } : step,
+    );
+    stepsRef.current = initialSteps;
+    setSteps(initialSteps);
+    setActivityLog([createSeedLogEntry()]);
+  }
+
+  async function handleSubmit(submittedTopic: string) {
+    resetRunState(submittedTopic);
 
     try {
       const started = await startResearch(submittedTopic);
       threadIdRef.current = started.thread_id;
       setActiveThreadId(started.thread_id);
+      setActivityLogForThread(started.thread_id, (log) => log);
       await pollStatus(started.thread_id);
       watchResearch(started.thread_id);
     } catch (err) {
       setIsRunning(false);
-      if (err instanceof ResearchApiError) {
-        setError(err.message);
-      } else {
-        setError("Unable to start research. Is the API running on port 8000?");
-      }
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to start research. Is the API running on port 8000?";
+      setError(message);
+      appendActivityLog([createErrorLogEntry(message)]);
     }
   }
 
@@ -213,37 +262,33 @@ export function ResearchWorkspace() {
     if (threadId) {
       try {
         const status = await cancelResearch(threadId);
-        setSteps(status.steps.length > 0 ? status.steps : IDLE_STEPS);
+        const nextSteps = status.steps.length > 0 ? status.steps : IDLE_STEPS;
+        appendActivityLog(diffStepsToLogEntries(stepsRef.current, nextSteps));
+        stepsRef.current = nextSteps;
+        setSteps(nextSteps);
         setError(status.error);
+        appendActivityLog([createErrorLogEntry("Research cancelled.")]);
         void loadHistory();
       } catch (err) {
-        if (err instanceof ResearchApiError) {
-          setError(err.message);
-        } else {
-          setError("Unable to cancel research on the API.");
-        }
+        const message = err instanceof ResearchApiError
+          ? err.message
+          : "Unable to cancel research on the API.";
+        setError(message);
+        appendActivityLog([createErrorLogEntry(message)]);
       }
     }
     setActiveThreadId(null);
     setIsRunning(false);
     setTopic(null);
     setReport(null);
-    setAnalysis(null);
   }
 
   async function handleResumeHistory(item: ResearchHistoryItem) {
-    stopPolling();
-    setIsRunning(true);
-    setReport(null);
-    setAnalysis(null);
-    setError(null);
+    resetRunState(item.topic);
     setInfo("Resuming from saved checkpoint…");
-    setTopic(item.topic);
     setActiveThreadId(item.thread_id);
     threadIdRef.current = item.thread_id;
-    setSteps(IDLE_STEPS.map((step, index) =>
-      index === 0 ? { ...step, status: "active" } : step,
-    ));
+    setActivityLogForThread(item.thread_id, (log) => log);
 
     try {
       const started = await startResearch(item.topic, item.thread_id);
@@ -252,11 +297,11 @@ export function ResearchWorkspace() {
     } catch (err) {
       setIsRunning(false);
       setInfo(null);
-      if (err instanceof ResearchApiError) {
-        setError(err.message);
-      } else {
-        setError("Unable to resume research.");
-      }
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to resume research.";
+      setError(message);
+      appendActivityLog([createErrorLogEntry(message)]);
     }
   }
 
@@ -273,34 +318,53 @@ export function ResearchWorkspace() {
       threadIdRef.current = threadId;
       setActiveThreadId(threadId);
       setTopic(status.topic);
-      setSteps(status.steps.length > 0 ? status.steps : IDLE_STEPS);
-      setAnalysis(status.analysis);
+      const nextSteps = status.steps.length > 0 ? status.steps : IDLE_STEPS;
+      stepsRef.current = nextSteps;
+      setSteps(nextSteps);
       setReport(status.report);
+      setSessionCost(status.session_cost);
+      setMaxCost(status.max_cost);
+      setBudgetExceeded(status.budget_exceeded);
       setIsRunning(status.status === "running");
 
-      if (status.status === "running") {
+      const cached = activityLogCacheRef.current.get(threadId);
+      if (cached?.length) {
+        setActivityLog(cached);
+      } else if (status.status === "running") {
+        setActivityLogForThread(threadId, [createSeedLogEntry()]);
+        watchResearch(threadId);
+      } else {
+        setActivityLogForThread(
+          threadId,
+          buildActivityLogFromSteps(nextSteps, {
+            error: status.error,
+            jobStatus: status.status,
+          }),
+        );
+      }
+
+      if (status.status === "running" && cached?.length) {
         watchResearch(threadId);
       }
     } catch (err) {
-      if (err instanceof ResearchApiError) {
-        setError(err.message);
-      } else {
-        setError("Unable to open saved report.");
-      }
+      const message = err instanceof ResearchApiError
+        ? err.message
+        : "Unable to open saved report.";
+      setError(message);
     }
   }
 
   return (
     <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <header className="mb-8 max-w-2xl">
-        <p className="mb-2 text-xs font-medium uppercase tracking-widest text-primary">
-          Multi-agent research
-        </p>
+      <header className="mb-8 flex flex-col items-center text-center">
+        <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Bot className="size-7" aria-hidden />
+        </div>
         <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Research any topic
+          Multi-Agent Research
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
-          Enter a question below. Agents will search the web, analyze findings, and compile a structured report you can download.
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+          AI agents working together to deliver in-depth research.
         </p>
       </header>
 
@@ -327,17 +391,14 @@ export function ResearchWorkspace() {
               {error}
             </p>
           ) : null}
-          <ActivityPanel
-            steps={steps}
-            analysis={analysis}
+          <AgentPipeline steps={steps} isRunning={isRunning} hasReport={Boolean(report)} />
+          <ActivityPanel activityLog={activityLog} isRunning={isRunning} />
+          <BudgetFooter
             isRunning={isRunning}
-            stepCount={stepCount}
-            maxSteps={maxSteps}
             sessionCost={sessionCost}
             maxCost={maxCost}
             budgetExceeded={budgetExceeded}
           />
-          <AgentPipeline steps={steps} isRunning={isRunning} hasReport={Boolean(report)} />
           <ReportHistory
             reports={history}
             isLoading={isHistoryLoading}

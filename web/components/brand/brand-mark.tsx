@@ -1,4 +1,4 @@
-import { FlaskConical } from "lucide-react";
+import { Bot } from "lucide-react";
 
 import { BRAND_COLORS } from "@/lib/brand-icon";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,7 @@ export function BrandMark({ size = "md", className }: BrandMarkProps) {
         color: BRAND_COLORS.icon,
       }}
     >
-      <FlaskConical className={sizes.icon} aria-hidden />
+      <Bot className={sizes.icon} aria-hidden />
     </span>
   );
 }

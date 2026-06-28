@@ -21,10 +21,10 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "Research Agent",
+  title: "Multi-Agent Research",
   description:
-    "Research any topic with a multi-agent pipeline. Search, analyze, and compile structured reports.",
-  applicationName: "Research Agent",
+    "AI agents working together to deliver in-depth research. Search, analyze, and compile structured reports.",
+  applicationName: "Multi-Agent Research",
 };
 
 export default function RootLayout({
