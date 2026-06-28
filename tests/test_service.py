@@ -7,6 +7,7 @@ import pytest
 from research_agent.service import (
     AGENT_LABELS,
     PIPELINE_AGENTS,
+    _resolve_display_node,
     build_pipeline_steps,
 )
 
@@ -48,3 +49,33 @@ class TestBuildPipelineSteps:
             assert set(step.keys()) == {"agent", "status", "label"}
             assert step["agent"] in PIPELINE_AGENTS
             assert step["status"] in {"idle", "active", "done", "error"}
+
+    def test_supervisor_active_at_job_start(self) -> None:
+        steps = build_pipeline_steps([], "supervisor", "running")
+        by_agent = {step["agent"]: step for step in steps}
+        assert by_agent["supervisor"]["status"] == "active"
+        assert by_agent["search"]["status"] == "idle"
+
+    def test_finish_active_after_writer_with_report(self) -> None:
+        executed = ["supervisor", "search", "supervisor", "analysis", "supervisor", "writer"]
+        steps = build_pipeline_steps(executed, "finish", "running")
+        by_agent = {step["agent"]: step for step in steps}
+        assert by_agent["writer"]["status"] == "done"
+        assert by_agent["finish"]["status"] == "active"
+
+
+class TestResolveDisplayNode:
+    def test_supervisor_routes_to_search(self) -> None:
+        assert _resolve_display_node("supervisor", {"next_agent": "search"}) == "search"
+
+    def test_supervisor_routes_to_finish(self) -> None:
+        assert _resolve_display_node("supervisor", {"next_agent": "FINISH"}) == "finish"
+
+    def test_search_returns_to_supervisor(self) -> None:
+        assert _resolve_display_node("search", {}) == "supervisor"
+
+    def test_writer_with_report_shows_finish(self) -> None:
+        assert _resolve_display_node("writer", {"report": "# Report\n\nContent"}) == "finish"
+
+    def test_writer_without_report_returns_to_supervisor(self) -> None:
+        assert _resolve_display_node("writer", {"report": ""}) == "supervisor"

@@ -17,6 +17,11 @@ interface ActivityPanelProps {
   steps: PipelineStep[];
   analysis: string | null;
   isRunning: boolean;
+  stepCount?: number;
+  maxSteps?: number;
+  sessionCost?: number | null;
+  maxCost?: number | null;
+  budgetExceeded?: boolean;
 }
 
 function TypingDots() {
@@ -33,7 +38,16 @@ function TypingDots() {
   );
 }
 
-export function ActivityPanel({ steps, analysis, isRunning }: ActivityPanelProps) {
+export function ActivityPanel({
+  steps,
+  analysis,
+  isRunning,
+  stepCount = 0,
+  maxSteps = 0,
+  sessionCost = null,
+  maxCost = null,
+  budgetExceeded = false,
+}: ActivityPanelProps) {
   const activeAgent = getActiveAgent(steps);
   const [variantIndex, setVariantIndex] = useState(0);
 
@@ -41,7 +55,6 @@ export function ActivityPanel({ steps, analysis, isRunning }: ActivityPanelProps
     if (!isRunning || !activeAgent) {
       return;
     }
-    setVariantIndex(0);
     const interval = setInterval(() => {
       setVariantIndex((prev) => prev + 1);
     }, 4000);
@@ -66,10 +79,14 @@ export function ActivityPanel({ steps, analysis, isRunning }: ActivityPanelProps
     : null;
 
   return (
-    <Card className="border-primary/20 bg-primary/[0.03] shadow-sm animate-in fade-in duration-300">
+    <Card
+      className="border border-border bg-muted/40 shadow-sm animate-in fade-in duration-300"
+      aria-live="polite"
+      aria-atomic="false"
+    >
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Sparkles className="size-4 text-primary animate-pulse" aria-hidden />
+          <Sparkles className="size-4 text-primary" aria-hidden />
           Live activity
           <TypingDots />
         </CardTitle>
@@ -84,6 +101,26 @@ export function ActivityPanel({ steps, analysis, isRunning }: ActivityPanelProps
         >
           {subMessage}
         </p>
+
+        <div className="grid gap-2 rounded-lg border border-border/60 bg-background/70 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+          <p>
+            <span className="font-medium text-foreground">Step budget:</span>{" "}
+            {maxSteps > 0 ? `${stepCount}/${maxSteps}` : "Tracking…"}
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Cost:</span>{" "}
+            {sessionCost == null
+              ? maxCost == null
+                ? "Estimating…"
+                : `Unknown / $${maxCost.toFixed(2)}`
+              : `$${sessionCost.toFixed(4)}${maxCost == null ? "" : ` / $${maxCost.toFixed(2)}`}`}
+          </p>
+          {budgetExceeded ? (
+            <p className="sm:col-span-2 text-destructive" role="alert">
+              Budget exceeded. The supervisor will stop the run.
+            </p>
+          ) : null}
+        </div>
 
         {truncatedAnalysis ? (
           <div className="rounded-lg border border-border/60 bg-background/80 p-3 animate-in fade-in slide-in-from-bottom-1 duration-300">

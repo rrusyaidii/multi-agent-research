@@ -2,182 +2,100 @@
 
 ## Overview
 
-A multi-agent system built with **LangGraph 1.x** that:
-1. Takes a research topic from the user
-2. Delegates to specialist agents via a **Supervisor**
-3. Each agent performs its task using tools (web search, fetch, analysis)
-4. A report writer compiles findings into a structured markdown report
-5. All state is persisted via **checkpointers** for session continuity
+This project is a full-stack research app:
 
-## System Context
+- **LangGraph backend** coordinates supervisor, search, analysis, and writer agents.
+- **FastAPI** exposes job creation, status, history, cancel, and SSE streaming endpoints.
+- **Next.js** renders the research workspace, agent pipeline, recent reports, markdown report viewer, and PDF export.
+- **SQLite** stores both LangGraph checkpoints and job metadata/history.
+- **Tavily** is the recommended search provider, with DuckDuckGo fallback.
 
-```
-┌────────────────────┐
-│     User (CLI)     │
-│  python -m research │
-└─────────┬──────────┘
-          │ topic
-          ▼
-┌──────────────────────────────────────────────────────┐
-│                  LangGraph StateGraph                  │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  Supervisor  │  │  Search Agt  │  │  Analysis    │ │
-│  │  (router)    │◄─┤  (tool loop) │◄─┤  (summarise) │ │
-│  └──────┬───────┘  └──────────────┘  └──────┬───────┘ │
-│         │                                    │         │
-│         └────────────────┬───────────────────┘         │
-│                          ▼                             │
-│                   ┌──────────────┐                      │
-│                   │Report Writer │                      │
-│                   │(compile +    │                      │
-│                   │ export)      │                      │
-│                   └──────┬───────┘                      │
-│                          │ FINISH                       │
-│                          ▼                              │
-│                        END                               │
-│                                                          │
-│  Persistence: MemorySaver (SQLite)                       │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  user[User] --> web[Next.js UI]
+  web --> api[FastAPI API]
+  api --> service[Job service]
+  service --> graph[LangGraph]
+  graph --> supervisor[Supervisor]
+  supervisor --> search[Search agent]
+  supervisor --> analysis[Analysis agent]
+  supervisor --> writer[Writer agent]
+  search --> tavily[Tavily or DuckDuckGo]
+  service --> jobs[(jobs.db)]
+  graph --> checkpoints[(checkpoints.db)]
+  writer --> reports[reports/*.md]
 ```
 
-## Graph Design (LangGraph StateGraph)
+## Runtime Flow
 
-### State
+1. User submits a topic in the web UI or CLI.
+2. `POST /research` creates a job record and starts a background worker thread.
+3. The worker streams LangGraph node updates through `service.py`.
+4. Job metadata is persisted to `.checkpoints/jobs.db`.
+5. Graph state is checkpointed to `.checkpoints/checkpoints.db`.
+6. Completed markdown is written to `reports/{thread_id}.md`.
+7. The UI receives status through SSE (`/research/{thread_id}/stream`) with polling fallback.
 
-```python
-class ResearchState(TypedDict):
-    messages: Annotated[list[BaseMessage], operator.add]
-    topic: str
-    search_results: list[dict]
-    analysis: str
-    report: str
-    next_agent: str
-    step_count: int
-    max_steps: int  # budget control
-    thread_id: str
+## LangGraph
+
+```mermaid
+flowchart TD
+  start[START] --> supervisor
+  supervisor -->|search| search
+  supervisor -->|analysis| analysis
+  supervisor -->|writer| writer
+  supervisor -->|FINISH| finish[END]
+  search --> supervisor
+  analysis --> supervisor
+  writer --> supervisor
 ```
 
-### Nodes
+| Node | Responsibility |
+|------|----------------|
+| `supervisor` | Routes work and enforces step budget |
+| `search` | Runs multi-query web search and fetches source pages |
+| `analysis` | Compares options, ranks recommendations, flags gaps |
+| `writer` | Produces markdown report with summaries, tables, citations |
 
-| Node | Type | Reads | Writes |
-|------|------|-------|--------|
-| `supervisor` | Custom | messages, topic, search_results, analysis | next_agent |
-| `search` | create_agent + tools | topic | search_results |
-| `analysis` | create_agent | search_results | analysis |
-| `writer` | create_agent | analysis | report |
+## Persistence
 
-### Edges
+| Store | File | Purpose |
+|-------|------|---------|
+| LangGraph checkpoint | `.checkpoints/checkpoints.db` | Graph state by `thread_id` |
+| Job metadata | `.checkpoints/jobs.db` | Status, topic, steps, report path, timestamps |
+| Markdown reports | `reports/{thread_id}.md` | Completed report content |
 
-| From | To | Condition |
-|------|----|-----------|
-| START | supervisor | Always |
-| supervisor | search | next_agent == "search" |
-| supervisor | analysis | next_agent == "analysis" |
-| supervisor | writer | next_agent == "writer" |
-| supervisor | END | next_agent == "FINISH" |
-| search | supervisor | Always |
-| analysis | supervisor | Always |
-| writer | supervisor | Always (loops back for review) |
+`JobStore` hydrates completed report metadata from `reports/*.md` when needed, so the UI can show report history after restart.
 
-### ToolNode
+## API
 
-The `search` agent uses a pre-built `ToolNode` with:
-- `web_search(query)` — searches web for results
-- `web_fetch(url)` — fetches and extracts content from a URL
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/research` | Start or retry a job |
+| `GET` | `/research` | Recent job/report history |
+| `POST` | `/research/{thread_id}/cancel` | Cooperative cancellation |
+| `GET` | `/research/{thread_id}/stream` | SSE status snapshots |
+| `GET` | `/status/{thread_id}` | Polling fallback/status snapshot |
 
-## Component Details
+Cancellation is cooperative: it stops before the next graph node starts, but cannot interrupt an in-flight LLM or search call.
 
-### Supervisor
+## Frontend
 
-```python
-def supervisor_node(state: ResearchState):
-    """LLM decides the next agent based on current state."""
-    response = llm.with_structured_output(RouteDecision).invoke([
-        SystemMessage(content=SUPERVISOR_PROMPT),
-        *state["messages"]
-    ])
-    return {"next_agent": response.next_agent}
+The Next.js UI is centered on `web/components/research/research-workspace.tsx`:
+
+- `TopicForm` — multi-line topic input and 3–500 character validation
+- `ActivityPanel` — current work, step budget, cost/budget status
+- `AgentPipeline` — accessible stepper/progress
+- `ReportHistory` — recent persisted jobs/reports
+- `ReportViewer` — GFM markdown rendering and PDF export
+
+## Deployment
+
+Local development runs API and web separately. Docker Compose runs both:
+
+```bash
+docker compose up --build
 ```
 
-Routes available: `search`, `analysis`, `writer`, `FINISH`
-
-### Search Agent
-
-```python
-search_agent = create_agent(
-    llm=llm,
-    tools=[web_search, web_fetch],
-    prompt="You are a research agent. Search the web and gather information."
-)
-```
-
-### Analysis Agent
-
-```python
-analysis_agent = create_agent(
-    llm=llm,
-    tools=[],  # pure reasoning
-    prompt="Analyse the search results and extract key findings."
-)
-```
-
-### Report Writer
-
-```python
-writer_agent = create_agent(
-    llm=llm,
-    tools=[],
-    prompt="Compile the analysis into a structured markdown report."
-)
-```
-
-## Cost Budget Control
-
-```
-graph = StateGraph(ResearchState)
-graph.set_entry_point("supervisor")
-
-# Add conditional edge with step counter
-# If step_count >= max_steps, force FINISH
-
-MAX_STEPS = 30   # total LLM calls per session
-MAX_COST = 0.05  # hard budget in USD (Gemini Flash)
-```
-
-## State Persistence
-
-```python
-from langgraph.checkpoint.memory import MemorySaver
-
-checkpointer = MemorySaver()
-app = graph.compile(checkpointer=checkpointer)
-
-# Continue session with thread_id
-config = {"configurable": {"thread_id": "research-01"}}
-```
-
-## Error Handling Strategy
-
-| Failure | Behaviour |
-|---------|-----------|
-| LLM call fails | Retry (2x with backoff) → skip node |
-| Tool timeout (10s) | Return error message to agent |
-| Budget exceeded | Force FINISH, return partial results |
-| Invalid routing | Default to FINISH (safe exit) |
-
-## Deployment Architecture
-
-### Local
-```
-User → CLI → StateGraph (in-process) → SQLite → stdout
-```
-
-### API (v2)
-```
-User → HTTP → FastAPI → StateGraph (per request) → PostgreSQL → JSON response
-```
-
-### Web (v3)
-```
-Browser → Next.js → FastAPI → StateGraph → PostgreSQL → SSE stream → UI
-```
+The web container uses `API_URL=http://api:8000` for server-side rewrites. Local development defaults to `http://localhost:8000`.

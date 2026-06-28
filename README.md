@@ -21,7 +21,7 @@ Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
 | LLM | OpenRouter (default: `google/gemini-2.5-flash`) |
 | API | FastAPI + uvicorn |
 | UI | Next.js 16, Tailwind CSS, shadcn/ui |
-| Search | DuckDuckGo via httpx (no API key required) |
+| Search | Tavily API (recommended) or DuckDuckGo fallback |
 | Persistence | SQLite checkpointer (`.checkpoints/`) |
 
 ---
@@ -31,6 +31,7 @@ Supervisor ──→ Search ──→ Analysis ──→ Writer ──→ Done
 - **Python 3.10+**
 - **Node.js 18+** (for the web UI)
 - An **OpenRouter API key** ([openrouter.ai](https://openrouter.ai))
+- A **Tavily API key** ([tavily.com](https://tavily.com)) — free tier available; strongly recommended for better research quality
 
 ---
 
@@ -54,7 +55,7 @@ pip install -e ".[api,test]"
 
 # Environment variables
 cp .env.example .env
-# Edit .env — set OPENROUTER_API_KEY=sk-or-v1-your-key-here
+# Edit .env — set OPENROUTER_API_KEY and TAVILY_API_KEY
 ```
 
 ### 2. Terminal 1 — API server (port 8000)
@@ -75,6 +76,21 @@ npm run dev
 ```
 
 Open **http://localhost:3000**, enter a topic, and watch the agent pipeline run. The finished report appears in the right panel and is saved to `reports/{thread_id}.md`. Use **Download PDF** to export.
+
+---
+
+## Docker Quick Start
+
+For a one-command full-stack run:
+
+```bash
+cp .env.example .env
+# Edit .env — set OPENROUTER_API_KEY and TAVILY_API_KEY
+
+docker compose up --build
+```
+
+Then open **http://localhost:3000**. The API runs on **http://localhost:8000**. Reports and checkpoints are mounted to local `reports/` and `.checkpoints/`.
 
 ---
 
@@ -102,6 +118,10 @@ Copy [`.env.example`](.env.example) to `.env` and fill in:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | Your OpenRouter API key |
+| `TAVILY_API_KEY` | Recommended | Tavily Search API key — much better results than DuckDuckGo |
+| `SEARCH_PROVIDER` | No | `tavily` (default if key set) or `duckduckgo` |
+| `TAVILY_MAX_RESULTS` | No | Max Tavily results per query (default: 8) |
+| `TAVILY_SEARCH_DEPTH` | No | `basic` or `advanced` (default: advanced) |
 | `OPENROUTER_MODEL` | No | Default: `google/gemini-2.5-flash` |
 | `MAX_LLM_CALLS` | No | Step budget per session (default: 30) |
 | `MAX_COST_PER_SESSION` | No | Cost cap in USD (default: 0.05) |
@@ -110,14 +130,35 @@ Copy [`.env.example`](.env.example) to `.env` and fill in:
 
 The UI proxies `/api/*` → `http://localhost:8000` via Next.js rewrites, so CORS is only needed for direct API access.
 
+### Search quality (v2)
+
+For comparison topics like "VPS hosting Malaysia", set up Tavily:
+
+```env
+SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=tvly-your-key-here
+TAVILY_SEARCH_DEPTH=advanced
+```
+
+Without Tavily, the agent falls back to DuckDuckGo HTML scraping (lower quality, snippet-only results).
+
 ---
 
 ## Testing
 
 ```bash
 python -m pytest tests/ -v
-cd web && npm run build
+cd web
+npm run lint
+npm run test
+npm run build
+
+# Browser E2E with mocked API responses
+npx playwright install
+npm run test:e2e
 ```
+
+Live OpenRouter/Tavily tests are intentionally not part of default CI to avoid using API credits.
 
 ---
 
@@ -131,9 +172,11 @@ multi-agent-research/
 │   ├── service.py        # Shared job runner (CLI + API)
 │   ├── api.py            # FastAPI endpoints
 │   ├── cli.py            # CLI entry point
+│   ├── job_store.py      # SQLite job metadata/history
 │   ├── agents/           # search, analysis, writer
-│   └── tools/            # web_search, web_fetch
+│   └── tools/            # web_search, web_fetch, tavily_search
 ├── web/                  # Next.js frontend
+├── docs/sample-report.md # Example output shape
 ├── tests/
 ├── reports/              # Generated markdown reports (gitignored)
 └── .checkpoints/         # SQLite session state (gitignored)
@@ -162,7 +205,23 @@ These are in [`.gitignore`](.gitignore) — keep them local:
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
 | `POST` | `/research` | Start research job `{ "topic": "..." }` |
+| `GET` | `/research` | List recent jobs/reports |
+| `POST` | `/research/{thread_id}/cancel` | Cooperatively cancel a running job |
+| `GET` | `/research/{thread_id}/stream` | Server-sent status updates |
 | `GET` | `/status/{thread_id}` | Poll job status, steps, report |
+
+---
+
+## Current Product Features
+
+- Multi-line topic input with 3–500 character validation
+- Recent report history backed by SQLite job metadata
+- Cooperative cancel to stop before the next expensive graph step
+- SSE status streaming with polling fallback
+- GFM report rendering with scrollable tables and code blocks
+- Direct PDF download
+
+See [sample report](docs/sample-report.md) for the expected report shape.
 
 ---
 

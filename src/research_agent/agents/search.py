@@ -18,14 +18,27 @@ from research_agent.utils import (
     parse_search_results,
 )
 
-SEARCH_PROMPT = """You are a research search agent.
+SEARCH_PROMPT = """You are a research search agent. Your job is deep fact-finding, not quick summarising.
 
-Your job:
-1. Use web_search to find relevant sources for the topic.
-2. Use web_fetch on the most promising URLs to read content.
-3. Return a JSON array of findings. Each item must include: title, url, snippet, and key_points (list of strings).
+Research process (follow in order):
+1. Run 2–3 different web_search queries for the topic:
+   - One broad overview query
+   - One comparison or "best options" query
+   - One pricing, reviews, or specifics query (if relevant)
+2. Use web_fetch on at least 3 distinct promising URLs — do not rely on snippets alone.
+3. Extract concrete facts: names, prices, dates, specs, pros/cons — each tied to a source URL.
+4. Aim for at least 5 distinct findings before finishing. If results are thin, broaden your queries.
 
-Return ONLY valid JSON in your final message — no markdown fences."""
+Return ONLY a JSON array in your final message (no markdown fences). Each item:
+{
+  "title": "Source or entity name",
+  "url": "https://...",
+  "snippet": "Brief description",
+  "key_points": ["fact 1", "fact 2"],
+  "category": "optional grouping label"
+}
+
+Do not invent data. If a fact is unknown, omit it or note it in key_points."""
 
 _search_agent = None
 
@@ -45,7 +58,8 @@ def search_node(state: ResearchState) -> dict:
     topic = state["topic"]
     prompt = (
         f"Research this topic thoroughly:\n\n{topic}\n\n"
-        "Search the web, fetch useful pages, and return JSON findings."
+        "Use multiple search queries, fetch key pages, and return a JSON array of findings "
+        "with concrete facts suitable for comparison and ranking."
     )
 
     def _run():

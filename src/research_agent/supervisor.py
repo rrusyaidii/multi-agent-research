@@ -24,10 +24,12 @@ Available routes:
 Rules:
 1. Prefer the pipeline order: search → analysis → writer → FINISH
 2. If search_results is empty, route to search
-3. If analysis is empty but search_results exist, route to analysis
-4. If report is empty but analysis exists, route to writer
-5. If report looks complete, route to FINISH
-6. Never route to an agent that cannot make progress
+3. If search_results has fewer than 5 items and step budget allows, route back to search for more depth
+4. If analysis is empty but search_results exist, route to analysis
+5. If report is empty but analysis exists, route to writer
+6. If report looks complete with comparison and recommendations, route to FINISH
+7. Never route to an agent that cannot make progress
+8. Thin or snippet-only search results are not enough — prefer another search pass when budget allows
 
 Respond with structured output only."""
 

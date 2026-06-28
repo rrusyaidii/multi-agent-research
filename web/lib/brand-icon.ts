@@ -1,7 +1,7 @@
 /** Lucide FlaskConical paths — shared by BrandMark and app icons */
 export const BRAND_COLORS = {
-  background: "#1a2332",
-  icon: "#14b8a6",
+  background: "#0A0A0A",
+  icon: "#D97706",
 } as const;
 
 export const FLASK_CONICAL_PATHS = [

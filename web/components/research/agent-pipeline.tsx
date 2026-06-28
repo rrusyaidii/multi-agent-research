@@ -17,6 +17,7 @@ import type { AgentStatus, PipelineStep } from "@/lib/mock-data";
 interface AgentPipelineProps {
   steps: PipelineStep[];
   isRunning: boolean;
+  hasReport?: boolean;
 }
 
 function StepIcon({ status }: { status: AgentStatus }) {
@@ -70,7 +71,11 @@ function statusLabel(status: AgentStatus): string {
   }
 }
 
-function getLiveAnnouncement(steps: PipelineStep[], isRunning: boolean): string {
+function getLiveAnnouncement(
+  steps: PipelineStep[],
+  isRunning: boolean,
+  hasReport: boolean,
+): string {
   if (!isRunning) {
     const allDone = steps.every((s) => s.status === "done");
     if (allDone && steps.length > 0) {
@@ -84,17 +89,27 @@ function getLiveAnnouncement(steps: PipelineStep[], isRunning: boolean): string 
     return `${active.label} agent is running.`;
   }
 
+  if (hasReport) {
+    return "Finalizing report…";
+  }
+
   return "Research in progress.";
 }
 
-export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
+export function AgentPipeline({ steps, isRunning, hasReport = false }: AgentPipelineProps) {
   const doneCount = steps.filter((s) => s.status === "done").length;
   const total = steps.length;
   const progressPercent = total > 0 ? Math.round((doneCount / total) * 100) : 0;
-  const liveMessage = getLiveAnnouncement(steps, isRunning);
+  const liveMessage = getLiveAnnouncement(steps, isRunning, hasReport);
 
   return (
-    <Card id="pipeline" className="border-border/60 shadow-sm">
+    <Card
+      id="pipeline"
+      className={cn(
+        "border border-border bg-card shadow-sm",
+        isRunning && "card-accent-active",
+      )}
+    >
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -103,7 +118,7 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
               Supervisor routes work across specialist agents.
             </CardDescription>
           </div>
-          <Badge variant="secondary" className="shrink-0">
+          <Badge variant="secondary" className="shrink-0 bg-muted text-muted-foreground">
             {isRunning ? `${doneCount}/${total}` : `${total} agents`}
           </Badge>
         </div>
@@ -114,7 +129,14 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
               <span>Progress</span>
               <span>{progressPercent}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-label="Research pipeline progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent}
+            >
               <div
                 className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
                 style={{ width: `${progressPercent}%` }}
@@ -133,7 +155,7 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
         </div>
 
         {/* Desktop: horizontal stepper */}
-        <ol className="hidden md:flex md:items-start md:justify-between md:gap-2">
+        <ol className="hidden lg:flex lg:items-start lg:justify-between lg:gap-2">
           {steps.map((step, index) => {
             const activityMessage = getStepActivityMessage(step.agent, step.status);
             const connectorDone = step.status === "done";
@@ -145,6 +167,7 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
                   "relative flex flex-1 flex-col items-center gap-2",
                   step.status === "active" && "animate-in fade-in duration-300",
                 )}
+                aria-current={step.status === "active" ? "step" : undefined}
               >
                 {index < steps.length - 1 && (
                   <span
@@ -189,8 +212,8 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
           })}
         </ol>
 
-        {/* Mobile: vertical stepper */}
-        <ol className="flex flex-col gap-0 md:hidden">
+        {/* Mobile / tablet: vertical stepper */}
+        <ol className="flex flex-col gap-0 lg:hidden">
           {steps.map((step, index) => {
             const activityMessage = getStepActivityMessage(step.agent, step.status);
 
@@ -201,6 +224,7 @@ export function AgentPipeline({ steps, isRunning }: AgentPipelineProps) {
                   "flex gap-3",
                   step.status === "active" && "animate-in fade-in duration-300",
                 )}
+                aria-current={step.status === "active" ? "step" : undefined}
               >
                 <div className="flex flex-col items-center">
                   <StepIcon status={step.status} />

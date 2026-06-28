@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 from research_agent.config import get_settings
 from research_agent.graph import compile_graph
+from research_agent.job_store import JobRecord, JobStatus, JobStore
 from research_agent.state import initial_state
 
 logger = logging.getLogger(__name__)
@@ -28,67 +28,22 @@ AGENT_LABELS: dict[str, str] = {
 PIPELINE_AGENTS: tuple[str, ...] = ("supervisor", "search", "analysis", "writer", "finish")
 
 StepStatus = Literal["idle", "active", "done", "error"]
-JobStatus = Literal["running", "completed", "failed"]
 
 
 class JobConflictError(Exception):
     """Raised when a thread_id is already running."""
 
 
-@dataclass
-class JobRecord:
-    thread_id: str
-    topic: str
-    status: JobStatus
-    executed_nodes: list[str] = field(default_factory=list)
-    current_node: str | None = None
-    report: str = ""
-    analysis: str = ""
-    search_results: list[dict[str, Any]] = field(default_factory=list)
-    error: str | None = None
+def _job_store_path() -> Path:
+    return Path(get_settings().checkpointer_dir) / "jobs.db"
 
 
-class JobStore:
-    def __init__(self) -> None:
-        self._jobs: dict[str, JobRecord] = {}
-        self._lock = threading.Lock()
-
-    def get(self, thread_id: str) -> JobRecord | None:
-        with self._lock:
-            job = self._jobs.get(thread_id)
-            if job is None:
-                return None
-            return JobRecord(
-                thread_id=job.thread_id,
-                topic=job.topic,
-                status=job.status,
-                executed_nodes=list(job.executed_nodes),
-                current_node=job.current_node,
-                report=job.report,
-                analysis=job.analysis,
-                search_results=list(job.search_results),
-                error=job.error,
-            )
-
-    def is_running(self, thread_id: str) -> bool:
-        with self._lock:
-            job = self._jobs.get(thread_id)
-            return job is not None and job.status == "running"
-
-    def _set(self, job: JobRecord) -> None:
-        with self._lock:
-            self._jobs[job.thread_id] = job
-
-    def _update(self, thread_id: str, **kwargs: Any) -> None:
-        with self._lock:
-            job = self._jobs[thread_id]
-            for key, value in kwargs.items():
-                setattr(job, key, value)
-
-
-_job_store = JobStore()
+_job_store = JobStore(_job_store_path())
+_job_store.hydrate_reports(REPORTS_DIR)
 _graph_app = None
 _graph_lock = threading.Lock()
+_cancel_events: dict[str, threading.Event] = {}
+_cancel_lock = threading.Lock()
 
 
 def _get_graph():
@@ -97,6 +52,29 @@ def _get_graph():
         if _graph_app is None:
             _graph_app = compile_graph()
         return _graph_app
+
+
+def _get_cancel_event(thread_id: str) -> threading.Event:
+    with _cancel_lock:
+        event = _cancel_events.get(thread_id)
+        if event is None:
+            event = threading.Event()
+            _cancel_events[thread_id] = event
+        return event
+
+
+def _clear_cancel_event(thread_id: str) -> None:
+    with _cancel_lock:
+        _cancel_events.pop(thread_id, None)
+
+
+def _mark_cancelled(thread_id: str) -> None:
+    _job_store.update(
+        thread_id,
+        status="cancelled",
+        current_node=None,
+        error="Research was cancelled by the user.",
+    )
 
 
 def generate_thread_id() -> str:
@@ -108,6 +86,18 @@ def save_report(thread_id: str, report: str) -> Path:
     path = REPORTS_DIR / f"{thread_id}.md"
     path.write_text(report, encoding="utf-8")
     return path
+
+
+def _resolve_display_node(completed_node: str, merged: dict[str, Any]) -> str:
+    """Map a completed graph node to the agent currently running next."""
+    if completed_node == "supervisor":
+        next_agent = merged.get("next_agent", "FINISH")
+        return "finish" if next_agent == "FINISH" else str(next_agent)
+
+    if completed_node == "writer" and str(merged.get("report", "")).strip():
+        return "finish"
+
+    return "supervisor"
 
 
 def build_pipeline_steps(
@@ -123,12 +113,12 @@ def build_pipeline_steps(
             status: StepStatus = "done"
         elif job_status == "failed" and agent == current_node:
             status = "error"
+        elif job_status == "cancelled":
+            status = "done" if agent in executed_set else "idle"
         elif agent == current_node:
             status = "active"
         elif agent in executed_set and agent != current_node:
             status = "done"
-        elif agent == "finish" and job_status == "running" and "writer" in executed_set and current_node != "writer":
-            status = "active"
         else:
             status = "idle"
 
@@ -158,12 +148,20 @@ def _run_job(thread_id: str) -> None:
     )
 
     final_state: dict[str, Any] = dict(state)
+    cancel_event = _get_cancel_event(thread_id)
 
     try:
         for chunk in app.stream(state, config=config, stream_mode="updates"):
+            if cancel_event.is_set():
+                _mark_cancelled(thread_id)
+                return
+
             for node_name, update in chunk.items():
                 current_job = _job_store.get(thread_id)
                 if current_job is None:
+                    return
+                if cancel_event.is_set() or current_job.status == "cancelled":
+                    _mark_cancelled(thread_id)
                     return
 
                 executed = list(current_job.executed_nodes)
@@ -174,15 +172,22 @@ def _run_job(thread_id: str) -> None:
                     merged = {**final_state, **update}
                     final_state = merged
 
-                _job_store._update(
+                display_node = _resolve_display_node(node_name, merged)
+
+                _job_store.update(
                     thread_id,
                     executed_nodes=executed,
-                    current_node=node_name,
+                    current_node=display_node,
                     report=str(merged.get("report", "")),
                     analysis=str(merged.get("analysis", "")),
                     search_results=list(merged.get("search_results", [])),
+                    step_count=int(merged.get("step_count", 0)),
                 )
                 logger.info("Job %s: node %s completed", thread_id, node_name)
+
+        if cancel_event.is_set():
+            _mark_cancelled(thread_id)
+            return
 
         result = app.get_state(config)
         if result and result.values:
@@ -190,7 +195,7 @@ def _run_job(thread_id: str) -> None:
 
         report = str(final_state.get("report", ""))
         if not report:
-            _job_store._update(
+            _job_store.update(
                 thread_id,
                 status="failed",
                 current_node=None,
@@ -198,26 +203,30 @@ def _run_job(thread_id: str) -> None:
             )
             return
 
-        save_report(thread_id, report)
-        _job_store._update(
+        report_path = save_report(thread_id, report)
+        _job_store.update(
             thread_id,
             status="completed",
             current_node=None,
             report=report,
+            report_path=str(report_path),
             analysis=str(final_state.get("analysis", "")),
             search_results=list(final_state.get("search_results", [])),
+            step_count=int(final_state.get("step_count", 0)),
             error=None,
         )
         logger.info("Job %s: completed", thread_id)
 
     except Exception as exc:  # noqa: BLE001 - job boundary
         logger.exception("Job %s failed", thread_id)
-        _job_store._update(
+        _job_store.update(
             thread_id,
             status="failed",
             current_node=None,
             error=str(exc),
         )
+    finally:
+        _clear_cancel_event(thread_id)
 
 
 def start_research(topic: str, thread_id: str | None = None) -> JobRecord:
@@ -226,8 +235,16 @@ def start_research(topic: str, thread_id: str | None = None) -> JobRecord:
     if _job_store.is_running(tid):
         raise JobConflictError(f"Research job already running for thread_id={tid}")
 
-    job = JobRecord(thread_id=tid, topic=topic, status="running")
-    _job_store._set(job)
+    job = JobRecord(
+        thread_id=tid,
+        topic=topic,
+        status="running",
+        current_node="supervisor",
+        max_steps=get_settings().max_llm_calls,
+        max_cost=get_settings().max_cost_per_session,
+    )
+    _job_store.set(job)
+    _get_cancel_event(tid).clear()
 
     thread = threading.Thread(target=_run_job, args=(tid,), daemon=True)
     thread.start()
@@ -243,13 +260,44 @@ def wait_for_job(thread_id: str, poll_interval: float = 0.5) -> JobRecord:
         if job is None:
             msg = f"Unknown thread_id: {thread_id}"
             raise KeyError(msg)
-        if job.status in ("completed", "failed"):
+        if job.status in ("completed", "failed", "cancelled"):
             return job
         time.sleep(poll_interval)
 
 
 def get_job(thread_id: str) -> JobRecord | None:
     return _job_store.get(thread_id)
+
+
+def cancel_research(thread_id: str) -> JobRecord | None:
+    job = _job_store.get(thread_id)
+    if job is None:
+        return None
+    if job.status != "running":
+        return job
+    _get_cancel_event(thread_id).set()
+    _mark_cancelled(thread_id)
+    return _job_store.get(thread_id)
+
+
+def list_jobs(limit: int = 20) -> list[JobRecord]:
+    return _job_store.list_recent(limit=limit)
+
+
+def build_history_payload(limit: int = 20) -> list[dict[str, Any]]:
+    jobs = list_jobs(limit=limit)
+    return [
+        {
+            "thread_id": job.thread_id,
+            "topic": job.topic,
+            "status": job.status,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+            "has_report": bool(job.report),
+            "error": job.error,
+        }
+        for job in jobs
+    ]
 
 
 def build_status_payload(thread_id: str) -> dict[str, Any] | None:
@@ -265,4 +313,9 @@ def build_status_payload(thread_id: str) -> dict[str, Any] | None:
         "report": job.report or None,
         "analysis": job.analysis or None,
         "error": job.error,
+        "step_count": job.step_count,
+        "max_steps": job.max_steps,
+        "session_cost": job.session_cost,
+        "max_cost": job.max_cost,
+        "budget_exceeded": job.budget_exceeded,
     }

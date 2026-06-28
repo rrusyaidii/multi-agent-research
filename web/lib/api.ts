@@ -1,5 +1,6 @@
 import type {
   HealthResponse,
+  ResearchHistoryResponse,
   ResearchStartResponse,
   ResearchStatusResponse,
 } from "@/lib/types";
@@ -66,4 +67,40 @@ export async function getResearchStatus(
     cache: "no-store",
   });
   return handleResponse<ResearchStatusResponse>(response);
+}
+
+export async function getResearchHistory(limit = 20): Promise<ResearchHistoryResponse> {
+  const response = await fetch(`${API_BASE}/research?limit=${encodeURIComponent(limit)}`, {
+    cache: "no-store",
+  });
+  return handleResponse<ResearchHistoryResponse>(response);
+}
+
+export async function cancelResearch(threadId: string): Promise<ResearchStatusResponse> {
+  const response = await fetch(`${API_BASE}/research/${encodeURIComponent(threadId)}/cancel`, {
+    method: "POST",
+  });
+  return handleResponse<ResearchStatusResponse>(response);
+}
+
+export function subscribeResearchStatus(
+  threadId: string,
+  onStatus: (status: ResearchStatusResponse) => void,
+  onError: () => void,
+): EventSource {
+  const source = new EventSource(`${API_BASE}/research/${encodeURIComponent(threadId)}/stream`);
+
+  source.addEventListener("status", (event) => {
+    onStatus(JSON.parse((event as MessageEvent).data) as ResearchStatusResponse);
+  });
+  source.addEventListener("done", (event) => {
+    onStatus(JSON.parse((event as MessageEvent).data) as ResearchStatusResponse);
+    source.close();
+  });
+  source.onerror = () => {
+    source.close();
+    onError();
+  };
+
+  return source;
 }

@@ -29,13 +29,13 @@ export function SiteFooter() {
   }, []);
 
   return (
-    <footer className="mt-auto border-t border-border/60 bg-background">
+    <footer className="mt-auto border-t border-border bg-card/50">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-4 sm:flex-row sm:px-6 lg:px-8">
         <p className="text-xs text-muted-foreground">
           © {new Date().getFullYear()} Research Agent
         </p>
         {apiConnected === true ? (
-          <Badge variant="outline" className="text-xs font-normal text-emerald-600 dark:text-emerald-400">
+          <Badge variant="outline" className="border-primary/40 bg-primary/10 text-xs font-normal text-primary">
             Connected to API
           </Badge>
         ) : apiConnected === false ? (

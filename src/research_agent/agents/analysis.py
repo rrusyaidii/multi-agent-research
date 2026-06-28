@@ -11,18 +11,22 @@ from research_agent.config import get_llm
 from research_agent.state import ResearchState
 from research_agent.utils import build_ai_message, get_last_message_content, invoke_with_retry
 
-ANALYSIS_PROMPT = """You are a research analysis agent.
+ANALYSIS_PROMPT = """You are a research analyst. Do NOT merely summarise — analyse and compare.
 
-Analyse the provided search results and produce:
-- Key themes and patterns
-- Important facts with context
-- Gaps or contradictions in the sources
-- A structured summary suitable for report writing
+Your output must include these sections (use plain headings):
 
-Formatting rules:
-- Write clear plain prose only
-- Do NOT use **bold** or *italic* markdown
-- Use simple headings or numbered sections if needed
+1. Entities Identified — list the specific products, providers, or options found
+2. Comparison Dimensions — what criteria matter for this topic (price, features, support, etc.)
+3. Comparison — pros and cons for each entity on each dimension
+4. Ranking — rank the top options with clear rationale for the reader's use case
+5. Data Gaps — what was NOT found in sources; do not invent missing data
+6. Recommendation — your #1 pick and who it is best for
+
+Rules:
+- Compare at least 3 entities when the topic involves choices (hosting, tools, products, etc.)
+- Use only facts from the search results provided
+- Write clear plain prose — no **bold** or *italic* markdown
+- Be specific: names, numbers, and source references where available
 
 Do not use tools."""
 
@@ -48,7 +52,8 @@ def analysis_node(state: ResearchState) -> dict:
     prompt = (
         f"Topic: {topic}\n\n"
         f"Search results:\n{payload}\n\n"
-        "Analyse these findings and extract the most important insights."
+        "Produce a structured analyst brief with comparison, ranking, and recommendation. "
+        "If this topic involves choosing between options, compare at least 3 entities."
     )
 
     def _run():

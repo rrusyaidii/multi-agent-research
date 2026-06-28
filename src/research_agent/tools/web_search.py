@@ -1,4 +1,4 @@
-"""Web search tool using DuckDuckGo HTML results."""
+"""Web search tool — Tavily or DuckDuckGo depending on configuration."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import httpx
 from langchain_core.tools import tool
 
 from research_agent.config import get_settings
+from research_agent.tools.tavily_search import tavily_search
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; ResearchAgent/0.1; +https://github.com/rrusyaidii/multi-agent-research)"
@@ -45,12 +46,8 @@ def _parse_ddg_html(html: str, limit: int = 8) -> list[dict[str, str]]:
     return results
 
 
-@tool
-def web_search(query: str) -> str:
-    """Search the web for information about a topic. Returns JSON with title, url, and snippet."""
-    settings = get_settings()
-    timeout = settings.tool_timeout_seconds
-
+def duckduckgo_search(query: str, timeout: float, limit: int = 8) -> str:
+    """Search DuckDuckGo HTML results. Returns JSON string."""
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
             response = client.get(
@@ -58,7 +55,7 @@ def web_search(query: str) -> str:
                 params={"q": query},
             )
             response.raise_for_status()
-            results = _parse_ddg_html(response.text)
+            results = _parse_ddg_html(response.text, limit=limit)
     except httpx.TimeoutException:
         return json.dumps({"error": f"Search timed out after {timeout}s", "results": []})
     except httpx.HTTPError as exc:
@@ -72,4 +69,19 @@ def web_search(query: str) -> str:
             }
         )
 
-    return json.dumps({"results": results}, indent=2)
+    return json.dumps({"results": results, "provider": "duckduckgo"}, indent=2)
+
+
+@tool
+def web_search(query: str) -> str:
+    """Search the web for information about a topic. Returns JSON with title, url, and snippet."""
+    settings = get_settings()
+
+    if settings.search_provider == "tavily" and settings.tavily_api_key:
+        return tavily_search(query, settings)
+
+    return duckduckgo_search(
+        query,
+        timeout=settings.tool_timeout_seconds,
+        limit=settings.tavily_max_results,
+    )

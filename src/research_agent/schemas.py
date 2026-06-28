@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 AgentStep = Literal["supervisor", "search", "analysis", "writer", "finish"]
 StepStatus = Literal["idle", "active", "done", "error"]
-JobStatus = Literal["running", "completed", "failed", "not_found"]
+JobStatus = Literal["running", "completed", "failed", "cancelled", "not_found"]
 
 
 class ResearchRequest(BaseModel):
@@ -36,6 +36,25 @@ class ResearchStatusResponse(BaseModel):
     report: str | None = None
     analysis: str | None = None
     error: str | None = None
+    step_count: int = 0
+    max_steps: int = 0
+    session_cost: float | None = None
+    max_cost: float | None = None
+    budget_exceeded: bool = False
+
+
+class ResearchHistoryItem(BaseModel):
+    thread_id: str
+    topic: str
+    status: Literal["running", "completed", "failed", "cancelled"]
+    created_at: str
+    updated_at: str
+    has_report: bool
+    error: str | None = None
+
+
+class ResearchHistoryResponse(BaseModel):
+    items: list[ResearchHistoryItem]
 
 
 class HealthResponse(BaseModel):

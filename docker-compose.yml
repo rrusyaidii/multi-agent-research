@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      CORS_ORIGINS: http://localhost:3000
+      CHECKPOINTER_DIR: /.checkpoints
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./reports:/app/reports
+      - ./.checkpoints:/.checkpoints
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args: []
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
+import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
 
 import { Header } from "@/components/layout/header";
 import { SiteFooter } from "@/components/layout/site-footer";
@@ -13,7 +13,7 @@ const sourceSerif = Source_Serif_4({
   display: "swap",
 });
 
-const ibmPlexSans = IBM_Plex_Sans({
+const sourceSans = Source_Sans_3({
   variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
@@ -35,13 +35,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sourceSerif.variable} ${ibmPlexSans.variable} h-full antialiased`}
+      className={`dark ${sourceSerif.variable} ${sourceSans.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >

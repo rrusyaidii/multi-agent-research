@@ -115,3 +115,51 @@ class TestResearchStatus:
         data = response.json()
         assert data["status"] == "completed"
         assert data["report"] == "# Report\n\nContent here."
+
+
+class TestResearchHistory:
+    def test_history_returns_recent_items(self, client: TestClient) -> None:
+        payload = [
+            {
+                "thread_id": "research-done",
+                "topic": "Quantum computing",
+                "status": "completed",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:01:00+00:00",
+                "has_report": True,
+                "error": None,
+            }
+        ]
+        with patch("research_agent.api.build_history_payload", return_value=payload):
+            response = client.get("/research")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"][0]["thread_id"] == "research-done"
+
+
+class TestCancelResearch:
+    def test_cancel_returns_cancelled_status(self, client: TestClient) -> None:
+        payload = {
+            "thread_id": "research-cancel",
+            "topic": "AI agents",
+            "status": "cancelled",
+            "steps": [],
+            "report": None,
+            "analysis": None,
+            "error": "Research was cancelled by the user.",
+        }
+        with (
+            patch("research_agent.api.cancel_research", return_value=JobRecord(
+                thread_id="research-cancel",
+                topic="AI agents",
+                status="cancelled",
+            )),
+            patch("research_agent.api.build_status_payload", return_value=payload),
+        ):
+            response = client.post("/research/research-cancel/cancel")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "cancelled"
+        assert data["error"] == "Research was cancelled by the user."

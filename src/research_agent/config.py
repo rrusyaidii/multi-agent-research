@@ -25,10 +25,24 @@ class Settings:
     max_cost_per_session: float
     checkpointer_dir: str
     log_level: str
+    search_provider: str
+    tavily_api_key: str
+    tavily_max_results: int
+    tavily_search_depth: str
+
+
+def _resolve_search_provider(raw: str, tavily_key: str) -> str:
+    provider = raw.strip().lower()
+    if provider == "tavily" and tavily_key:
+        return "tavily"
+    return "duckduckgo"
 
 
 @lru_cache
 def get_settings() -> Settings:
+    tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    search_provider_raw = os.getenv("SEARCH_PROVIDER", "duckduckgo")
+
     return Settings(
         llm_provider=os.getenv("LLM_PROVIDER", "openrouter"),
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
@@ -39,6 +53,10 @@ def get_settings() -> Settings:
         max_cost_per_session=float(os.getenv("MAX_COST_PER_SESSION", "0.05")),
         checkpointer_dir=os.getenv("CHECKPOINTER_DIR", "./.checkpoints"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        search_provider=_resolve_search_provider(search_provider_raw, tavily_api_key),
+        tavily_api_key=tavily_api_key,
+        tavily_max_results=int(os.getenv("TAVILY_MAX_RESULTS", "8")),
+        tavily_search_depth=os.getenv("TAVILY_SEARCH_DEPTH", "advanced"),
     )
 
 
